@@ -24,6 +24,96 @@ npm install
 cp .env.example .env
 ```
 
+Then set `DATABASE_URL` in `.env` and create the schema — see
+[Database](#database) below.
+
+## Database
+
+Charlie stores its family knowledge in Postgres. Any Postgres works; Supabase
+is the path of least resistance because it needs nothing installed locally.
+
+**Supabase**: create a project, then click **Connect** at the top of the
+dashboard to get the connection strings.
+
+Choose the **Session pooler** (port 5432, host `*.pooler.supabase.com`). The
+*Direct connection* is IPv6-only, so it times out with `connect ETIMEDOUT` on an
+IPv4-only network — the failure looks like a credentials problem but is not.
+Avoid the *Transaction pooler* (port 6543); it disallows things a long-lived
+server relies on.
+
+Note the session pooler changes the username to `postgres.PROJECTREF`, not plain
+`postgres` — copy the whole string rather than editing a direct-connection one.
+
+The database password is separate from your dashboard login. Reset it under
+**Database → Settings → Database password** if you did not capture it at project
+creation. Keep it alphanumeric, or percent-encode it: it sits inside a URL, so
+`@ : / ? # &` will corrupt the connection string.
+
+An occasional `password authentication failed` on first connect is the pooler
+warming up. Retry once before changing anything.
+
+Create the schema and load the development household:
+
+```bash
+npm run db:migrate     # applies migrations/*.sql, tracked in schema_migrations
+npm run db:seed        # rebuilds the "Weekend Charlie" household
+```
+
+`db:seed` is idempotent — re-run it freely; it replaces the household rather
+than duplicating it.
+
+### Schema
+
+| Table          | Holds                                                          |
+| -------------- | -------------------------------------------------------------- |
+| `household`    | One family unit                                                 |
+| `alexa_user`   | Maps an Alexa `userId` to a household                           |
+| `person`       | Full name, preferred name, optional gender                      |
+| `person_alias` | Extra names a person answers to (`JT`, `James`, `James Thomas`) |
+| `relationship` | **Asserted** relationships only, with provenance                |
+
+Only asserted relationships are stored (`parent_of`, `sibling_of`). Aunt, uncle,
+niece, and nephew are derived at query time in [graph.ts](src/family/graph.ts)
+and never written to the database — persisting a derivation would later make it
+impossible to tell what a family member actually said from what Charlie worked
+out. Every relationship row carries `source_type` and `confidence`; seeded rows
+are `seed` / `confirmed`.
+
+`gender` is optional and only ever set from an explicit statement. It is never
+inferred from a name. When it is absent, descriptions fall back to neutral terms
+(`child`, `sibling`, `niece or nephew`).
+
+### Seeded household
+
+```text
+Jenna ──sibling_of── Hannah
+                       ├── parent_of ── Natalie Rose ("Natalie")
+                       └── parent_of ── James Thomas ("JT", aliases: JT, James, James Thomas)
+```
+
+## Alexa user mapping
+
+A skill request carries an Alexa `userId`. Charlie answers family questions only
+for a `userId` mapped to a household. Mapping is manual for Weekend Charlie —
+account linking and OAuth are out of scope.
+
+To find your `userId`, ask Charlie a family question from your Echo before any
+mapping exists. The request is rejected gracefully and the id is written to the
+server log:
+
+```json
+{"level":"warn","msg":"no household mapped for alexa user","alexaUserId":"amzn1.ask.account.AF..."}
+```
+
+Copy that value into `.env`, then re-seed:
+
+```bash
+DEV_ALEXA_USER_ID=amzn1.ask.account.AF...   # in .env
+npm run db:seed
+```
+
+The id lives only in `.env` and the database, never in source.
+
 ## Run
 
 ```bash
@@ -38,6 +128,11 @@ npm start            # run the compiled server
 npm test             # test suite
 npm run typecheck    # TypeScript, no emit
 ```
+
+The tests need no database server and no cloud account. Database-backed tests
+run against [PGlite](https://github.com/electric-sql/pglite) — real PostgreSQL
+compiled to WASM, in-process — so the SQL under test is the same SQL that runs
+against Supabase. Each test gets a freshly migrated database.
 
 ## Local manual check
 
@@ -132,6 +227,36 @@ Development mode is only available to that account's devices.
 
 Then say: **"Alexa, open weekend charlie."**
 
+### Interaction model
+
+The full model is [alexa/interaction-model.json](alexa/interaction-model.json).
+To apply it: **Build → Interaction Model → JSON Editor**, paste the file,
+**Save Model**, then **Build Model**.
+
+It adds one intent. `personName` is a slot, so there is no per-person intent:
+
+```text
+WhoIsPersonIntent   who is {personName}
+                    who's {personName}
+                    who {personName} is          <- "Alexa, ask Charlie who Natalie is"
+                    tell me about {personName}
+                    what do you know about {personName}
+```
+
+The slot type is the built-in `AMAZON.FirstName`, **extended** with values the
+built-in would not otherwise recognize (`JT` with synonyms `J T` / `J.T.`,
+`James Thomas`, `Natalie Rose`). Extending rather than replacing matters: a
+custom slot type would bias recognition toward known names, and asking about
+someone Charlie has never heard of ("who is Robert?") needs to still reach us so
+it can be answered honestly.
+
+If the console rejects the extension, delete the `types` block and rebuild —
+the bare built-in works, with weaker recognition of `JT`.
+
+Note that adding family members to the database does not require a model
+rebuild. The values above are recognition hints, not the set of answerable
+names.
+
 ### The console simulator cannot work here
 
 The Test tab's Alexa Simulator sends requests **without** the
@@ -154,8 +279,16 @@ resolves and the request reaches our logs at all.
 | `GET`  | `/health` | `{"status":"ok","service":"weekend-charlie"}` |
 | `POST` | `/alexa`  | Alexa Custom Skill request envelope          |
 
-`/alexa` handles `LaunchRequest`, acknowledges `SessionEndedRequest`, and answers
-anything else with a graceful "Sorry, I can't do that yet."
+`/alexa` handles `LaunchRequest`, answers family questions via
+`WhoIsPersonIntent`, supports Help/Stop/Cancel, acknowledges
+`SessionEndedRequest`, and answers anything else with "Sorry, I can't do that
+yet."
+
+Failures are spoken rather than surfaced as HTTP errors: an unreachable database
+produces "I'm having trouble remembering right now" instead of Alexa's generic
+"there was a problem with the requested skill's response." The underlying cause
+is still logged at `error` level — the 200 is for the listener, not a claim that
+nothing went wrong.
 
 ## Configuration
 
@@ -169,6 +302,8 @@ All settings live in `.env` (see `.env.example`).
 | `LOG_LEVEL`             | `info`        | `debug` \| `info` \| `warn` \| `error`                       |
 | `ALEXA_VERIFY_REQUESTS` | `true`        | Alexa signature + timestamp verification                     |
 | `ALEXA_SKILL_ID`        | _(unset)_     | When set, rejects requests from any other skill              |
+| `DATABASE_URL`          | _(unset)_     | Postgres connection string (Supabase or any Postgres)        |
+| `DEV_ALEXA_USER_ID`     | _(unset)_     | Alexa userId mapped to the seeded household by `db:seed`     |
 
 ## Alexa request verification
 
@@ -195,19 +330,55 @@ and intent name. They deliberately exclude the request body, `userId`,
 ## Layout
 
 ```
+migrations/
+  001_family.sql        schema, applied in filename order
+alexa/
+  interaction-model.json  paste into the console's JSON editor
 src/
   index.ts              process entrypoint
   server.ts             Express app + routes
   config.ts             environment configuration
   logger.ts             structured logging
+  bin/
+    db.ts               npm run db:migrate / db:seed
   alexa/
     handler.ts          request envelope -> service
     responses.ts        Alexa response envelope builders
     verify.ts           signature / timestamp / skill-id verification
+  db/
+    index.ts            connection pool + the Db interface
+    migrate.ts          migration runner
+    seed.ts             the development household
+  family/
+    graph.ts            family model + kinship rules (pure)
+    describe.ts         kinship -> sentence (pure)
+    repository.ts       all SQL for the family model
+    service.ts          what the Alexa handler calls
   services/
-    greeting.ts         the words Charlie says
+    speech.ts           the words Charlie says
 tests/
 ```
 
-Alexa-protocol concerns stay in `src/alexa/`; the words Charlie speaks come from
-`src/services/`. Later intents add a case in `handler.ts` and a service function.
+Alexa-protocol concerns stay in `src/alexa/`; the handler contains no SQL and
+walks no relationships. It calls `src/family/service.ts`, which loads a
+household through `repository.ts` and reasons about it with the pure functions
+in `graph.ts` and `describe.ts`. A household is small, so it is loaded whole and
+traversed in memory rather than through recursive SQL — and keeping the rules
+pure means most family behaviour is testable with no database at all.
+
+Later intents add a case in `handler.ts` and a service function.
+
+## Future considerations
+
+Noted while building, deliberately not built:
+
+- **Sibling inference from shared parents.** Natalie and JT share a parent but no
+  `sibling_of` was asserted, so Charlie does not call them siblings. Inferring it
+  is reasonable but should be recorded as inferred, not asserted.
+- **Wider kinship** — grandparents, cousins, in-laws, step- and half-relations.
+  The current rules stop at aunt/uncle and niece/nephew.
+- **Relationship metadata** such as birth order, so "younger sister" is possible.
+- **Non-binary and unspecified gender terms** beyond the current neutral
+  fallbacks.
+- **Provenance beyond seeding**: `source_type` already distinguishes `seed`,
+  `stated`, and `inferred`, but nothing yet writes the latter two.

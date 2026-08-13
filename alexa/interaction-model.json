@@ -1,0 +1,47 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "weekend charlie",
+      "modelConfiguration": {
+        "fallbackIntentSensitivity": {
+          "level": "LOW"
+        }
+      },
+      "intents": [
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.StopIntent", "samples": [] },
+        { "name": "AMAZON.NavigateHomeIntent", "samples": [] },
+        { "name": "AMAZON.FallbackIntent", "samples": [] },
+        {
+          "name": "WhoIsPersonIntent",
+          "slots": [
+            {
+              "name": "personName",
+              "type": "AMAZON.FirstName"
+            }
+          ],
+          "samples": [
+            "who is {personName}",
+            "who's {personName}",
+            "who {personName} is",
+            "who {personName} was",
+            "tell me about {personName}",
+            "what do you know about {personName}",
+            "about {personName}"
+          ]
+        }
+      ],
+      "types": [
+        {
+          "name": "AMAZON.FirstName",
+          "values": [
+            { "name": { "value": "JT", "synonyms": ["J T", "J.T.", "Jay Tee"] } },
+            { "name": { "value": "James Thomas" } },
+            { "name": { "value": "Natalie Rose" } }
+          ]
+        }
+      ]
+    }
+  }
+}

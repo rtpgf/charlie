@@ -1,11 +1,21 @@
 import express, { type Express } from 'express';
 
 import { describeRequest, handleAlexaRequest } from './alexa/handler.js';
+import { speak } from './alexa/responses.js';
 import { verifyAlexaRequest, verifySkillId } from './alexa/verify.js';
+import { getPool, type Db } from './db/index.js';
 import { logger } from './logger.js';
+import { havingTrouble } from './services/speech.js';
 
-export function createServer(): Express {
+export interface ServerDeps {
+  /** Defaults to the shared pool, which is created on first use so that
+   *  database-free paths keep working without DATABASE_URL. */
+  db?: Db;
+}
+
+export function createServer(deps: ServerDeps = {}): Express {
   const app = express();
+  const db: Db = deps.db ?? { query: (text, params) => getPool().query(text, params) };
 
   app.disable('x-powered-by');
 
@@ -27,7 +37,7 @@ export function createServer(): Express {
     }),
     verifyAlexaRequest,
     verifySkillId,
-    (req, res) => {
+    async (req, res) => {
       const envelope = req.body;
 
       if (!envelope?.request?.type) {
@@ -39,14 +49,17 @@ export function createServer(): Express {
       logger.info('alexa request', describeRequest(envelope));
 
       try {
-        const response = handleAlexaRequest(envelope);
+        const response = await handleAlexaRequest(envelope, { db });
         res.json(response);
       } catch (error: unknown) {
+        // Answer in Charlie's voice instead of letting Alexa fall back to its
+        // generic failure line. Still logged at error level -- the 200 is for
+        // the listener's benefit, not a claim that nothing went wrong.
         logger.error('alexa handler failed', {
           requestId: envelope.request.requestId,
           reason: error instanceof Error ? error.message : 'unknown',
         });
-        res.status(500).json({ error: 'internal error' });
+        res.json(speak(havingTrouble()));
       }
     },
   );
