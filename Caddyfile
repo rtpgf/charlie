@@ -1,0 +1,30 @@
+# Public HTTPS front door for the Alexa endpoint.
+#
+# Caddy terminates TLS and proxies to the Node server on 3000. It obtains and
+# renews the Let's Encrypt certificate automatically. The Node server stays
+# plain HTTP and knows nothing about certificates.
+#
+#   brew install caddy
+#   caddy run --config ./Caddyfile
+#
+# The router forwards external 443 -> this host:8443. Listening above 1024 means
+# Caddy needs no sudo.
+
+{
+	http_port 8080
+	https_port 8443
+}
+
+charlie.servehttp.com {
+	# Let's Encrypt always connects to external port 443, which the router maps
+	# to 8443, so the TLS-ALPN-01 challenge reaches Caddy and issuance/renewal
+	# work. Port 80 is not forwarded, so the HTTP-01 challenge cannot succeed --
+	# turn it off rather than let every renewal fail it first.
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
+	reverse_proxy localhost:3000
+}
