@@ -52,3 +52,18 @@ export function sessionEndedRequest() {
     request: { ...envelope.request, type: 'SessionEndedRequest', reason: 'USER_INITIATED' },
   };
 }
+
+/**
+ * The words Charlie speaks, with the SSML wrapper removed.
+ *
+ * Includes the `<voice>` element: Charlie speaks in a named Polly voice, so
+ * every response carries one, and no assertion about wording should have to
+ * know that.
+ */
+export function spokenFrom(ssml: string | undefined): string {
+  return (ssml ?? '')
+    .replace(/^<speak>/, '')
+    .replace(/<\/speak>$/, '')
+    .replace(/^<voice name="[A-Za-z]+">/, '')
+    .replace(/<\/voice>$/, '');
+}

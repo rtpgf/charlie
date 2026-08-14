@@ -98,5 +98,11 @@ export const config = {
     verifyRequests: bool(process.env.ALEXA_VERIFY_REQUESTS, true),
     /** Optional: reject requests from any skill other than this one. */
     skillId: process.env.ALEXA_SKILL_ID || undefined,
+    /**
+     * The Polly voice Charlie speaks in. Charlie is a he, and a skill otherwise
+     * inherits whatever voice the device is set to. Set to '' for the device
+     * voice; the value is emitted into SSML, so keep it to a Polly voice name.
+     */
+    voice: process.env.ALEXA_VOICE ?? 'Matthew',
   },
 } as const;

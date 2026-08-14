@@ -1,4 +1,5 @@
 import type { MediaFetcher, MediaDownload } from '../../src/media/retrieve.js';
+import type { ImageResizer } from '../../src/media/resize.js';
 import type { MediaStore } from '../../src/media/store.js';
 import type {
   MediaAnalysisContext,
@@ -54,6 +55,23 @@ export function recordingStore(): RecordingStore {
     delete: async (key) => {
       objects.delete(key);
       deleted.push(key);
+    },
+  };
+}
+
+export interface RecordingResizer extends ImageResizer {
+  resized: number[];
+}
+
+/** Pretends anything over `threshold` bytes is a camera original. */
+export function recordingResizer(threshold = 0): RecordingResizer {
+  const resized: number[] = [];
+  return {
+    resized,
+    toDisplaySize: async (bytes) => {
+      if (bytes.byteLength <= threshold) return null;
+      resized.push(bytes.byteLength);
+      return { bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xdb]), mimeType: 'image/jpeg' };
     },
   };
 }

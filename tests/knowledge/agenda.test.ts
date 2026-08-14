@@ -5,7 +5,7 @@ import type { Db } from '../../src/db/index.js';
 import { instantToLocalDate } from '../../src/knowledge/timezone.js';
 import { createServer } from '../../src/server.js';
 import { createSeededTestDb } from '../helpers/db.js';
-import { intentRequest, TEST_ALEXA_USER_ID } from '../fixtures.js';
+import { intentRequest, spokenFrom, TEST_ALEXA_USER_ID } from '../fixtures.js';
 
 const TIMEZONE = 'America/Chicago';
 
@@ -63,9 +63,7 @@ function askAgenda(dateSlot?: string) {
 }
 
 function spoken(response: { body: { response: { outputSpeech?: { ssml?: string } } } }): string {
-  return (response.body.response.outputSpeech?.ssml ?? '')
-    .replace(/^<speak>/, '')
-    .replace(/<\/speak>$/, '');
+  return spokenFrom(response.body.response.outputSpeech?.ssml);
 }
 
 function localToday(): string {

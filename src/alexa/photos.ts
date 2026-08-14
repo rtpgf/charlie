@@ -175,8 +175,12 @@ export async function handlePhotoNavigation(
     });
   }
 
-  const item = batch.items[wanted]!;
-  const spoken = item.description ?? positionLabel(wanted, batch.items.length) ?? '';
+  // Never the vision description. It is written for search and for someone who
+  // cannot see the photo -- "a child in a purple swimsuit with raised arms" --
+  // and reading it to a family who know exactly who that child is turns a
+  // grandchild into a case file. The photo is on screen; the position is all
+  // that needs saying.
+  const spoken = positionLabel(wanted, batch.items.length) ?? '';
   return showSlide(envelope, deps, batch, wanted, spoken);
 }
 

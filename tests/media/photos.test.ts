@@ -7,7 +7,7 @@ import { ingestInboundMessage } from '../../src/messaging/service.js';
 import { parseWhatsAppWebhook } from '../../src/messaging/whatsapp/parse.js';
 import { createServer } from '../../src/server.js';
 import { createSeededTestDb } from '../helpers/db.js';
-import { intentRequest, TEST_ALEXA_USER_ID } from '../fixtures.js';
+import { intentRequest, spokenFrom, TEST_ALEXA_USER_ID } from '../fixtures.js';
 import {
   failingStore,
   imageWebhook,
@@ -65,9 +65,7 @@ function ask(intent: string, options: { screen: boolean; session?: Record<string
 }
 
 function spoken(response: { body: { response: { outputSpeech?: { ssml?: string } } } }): string {
-  return (response.body.response.outputSpeech?.ssml ?? '')
-    .replace(/^<speak>/, '')
-    .replace(/<\/speak>$/, '');
+  return spokenFrom(response.body.response.outputSpeech?.ssml);
 }
 
 function directives(response: { body: { response: { directives?: unknown[] } } }): unknown[] {
@@ -204,6 +202,21 @@ describe('navigating a share', () => {
     });
 
     expect(back.body.sessionAttributes['photoIndex']).toBe(0);
+  });
+
+  it('never reads the vision description aloud', async () => {
+    await sharePhotos(3, "Here's Natalie at the beach!");
+    const first = await ask('ShowLatestPicturesIntent', { screen: true });
+
+    const next = await ask('AMAZON.NextIntent', {
+      screen: true,
+      session: first.body.sessionAttributes,
+    });
+
+    // The description is written for search and for someone who cannot see the
+    // photo. Read to a family who know the child, it is a case file.
+    expect(spoken(next)).toBe('2 of 3');
+    expect(spoken(next).toLowerCase()).not.toContain('a child');
   });
 
   it('says when it reaches the end rather than wrapping', async () => {

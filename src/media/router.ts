@@ -4,6 +4,7 @@ import type { Db } from '../db/index.js';
 import { logger } from '../logger.js';
 import { verifyMediaToken } from './link.js';
 import { findMediaById } from './repository.js';
+import { displayStorageKey } from './resize.js';
 import type { MediaStore } from './store.js';
 
 /**
@@ -22,6 +23,17 @@ export interface MediaRouterDeps {
 
 /** Matches the token lifetime; the URL stops working long before this matters. */
 const CACHE_SECONDS = 15 * 60;
+
+async function getDisplayOrOriginal(
+  store: MediaStore,
+  storageKey: string,
+): Promise<{ bytes: Uint8Array; contentType: string }> {
+  try {
+    return await store.get(displayStorageKey(storageKey));
+  } catch {
+    return store.get(storageKey);
+  }
+}
 
 export function createMediaRouter(deps: MediaRouterDeps): Router {
   const router = Router();
@@ -54,8 +66,10 @@ export function createMediaRouter(deps: MediaRouterDeps): Router {
         return;
       }
 
-      const object = await store.get(media.storageKey);
-      res.setHeader('Content-Type', media.mimeType ?? object.contentType);
+      // The display copy is what a screen can actually decode. The original is
+      // the fallback, so a photo stored before resizing existed still shows.
+      const object = await getDisplayOrOriginal(store, media.storageKey);
+      res.setHeader('Content-Type', object.contentType);
       res.setHeader('Content-Length', String(object.bytes.byteLength));
       // Private: the token is the credential, so no shared cache may keep it.
       res.setHeader('Cache-Control', `private, max-age=${CACHE_SECONDS}`);

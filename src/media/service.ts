@@ -19,6 +19,7 @@ import {
   updateBatchSummary,
   type MediaRow,
 } from './repository.js';
+import { storeDisplayCopy, type ImageResizer } from './resize.js';
 import { MediaRejectedError, validateDownload, type MediaFetcher } from './retrieve.js';
 import { extensionForMimeType, mediaStorageKey, type MediaStore } from './store.js';
 import { MEDIA_SCHEMA_VERSION, type MediaAnalyzer, type MediaInput } from './types.js';
@@ -37,6 +38,8 @@ export interface MediaDeps {
   fetcher?: MediaFetcher | undefined;
   store?: MediaStore | undefined;
   analyzer?: MediaAnalyzer | undefined;
+  /** Makes the screen-sized copy. Absent means originals are served as-is. */
+  resizer?: ImageResizer | undefined;
 }
 
 export interface MediaIngestResult {
@@ -161,6 +164,25 @@ async function retrieveAndStore(
     logger.error('media storage failed', { ...logContext, detail });
     await markMediaFailed(deps.db, { mediaId: media.id, status: 'storage_failed', detail });
     return null;
+  }
+
+  // A screen-sized copy beside the original. Best effort: a photo without one
+  // is still stored, still analyzed, and still served -- just at full size.
+  if (deps.resizer) {
+    try {
+      const resized = await storeDisplayCopy({
+        storageKey: key,
+        bytes: download.bytes,
+        store: deps.store,
+        resizer: deps.resizer,
+      });
+      logger.info('media display copy', { ...logContext, resized });
+    } catch (error: unknown) {
+      logger.warn('media display copy failed', {
+        ...logContext,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+    }
   }
 
   // Capture time is preserved only when the file actually carries one. An

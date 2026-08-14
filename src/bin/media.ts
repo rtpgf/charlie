@@ -10,6 +10,7 @@ import { config } from '../config.js';
 import { closePool, getPool } from '../db/index.js';
 import { createAnthropicMediaAnalyzer } from '../knowledge/providers/anthropic.js';
 import { reprocessMedia } from '../media/service.js';
+import { createSharpResizer } from '../media/resize.js';
 import { createWhatsAppMediaFetcher } from '../media/retrieve.js';
 import { createSupabaseMediaStore } from '../media/store.js';
 import { logger } from '../logger.js';
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
     db: getPool(),
     fetcher: createWhatsAppMediaFetcher({ accessToken, phoneNumberId, graphApiVersion }),
     store: createSupabaseMediaStore({ url, serviceKey, bucket }),
+    resizer: createSharpResizer(),
     analyzer: config.ai.apiKey
       ? createAnthropicMediaAnalyzer({
           apiKey: config.ai.apiKey,

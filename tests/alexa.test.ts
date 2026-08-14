@@ -8,6 +8,7 @@ import {
   intentRequest,
   launchRequest,
   sessionEndedRequest,
+  spokenFrom,
   whoIsRequest,
   TEST_ALEXA_USER_ID,
 } from './fixtures.js';
@@ -29,11 +30,27 @@ function post(body: unknown) {
 
 /** Speech, with the SSML wrapper removed. */
 function spoken(response: { body: { response: { outputSpeech?: { ssml?: string } } } }): string {
-  const ssml = response.body.response.outputSpeech?.ssml ?? '';
-  return ssml.replace(/^<speak>/, '').replace(/<\/speak>$/, '');
+  return spokenFrom(response.body.response.outputSpeech?.ssml);
 }
 
 // Milestone 1 behaviour, which must keep working.
+describe("Charlie's voice", () => {
+  it('speaks in a named voice rather than the device default', async () => {
+    // Charlie is a he in the family's language, and a skill otherwise inherits
+    // whatever voice the Echo happens to be set to.
+    const ssml = (await post(launchRequest())).body.response.outputSpeech.ssml;
+
+    expect(ssml).toMatch(/^<speak><voice name="Matthew">/);
+    expect(ssml).toMatch(/<\/voice><\/speak>$/);
+  });
+
+  it('speaks in that voice everywhere, not only the greeting', async () => {
+    const ssml = (await post(whoIsRequest('Natalie'))).body.response.outputSpeech.ssml;
+
+    expect(ssml).toContain('<voice name="Matthew">');
+  });
+});
+
 describe('POST /alexa', () => {
   it('speaks the greeting on LaunchRequest', async () => {
     const response = await post(launchRequest());
@@ -42,7 +59,7 @@ describe('POST /alexa', () => {
     expect(response.body.version).toBe('1.0');
     expect(response.body.response.outputSpeech).toEqual({
       type: 'SSML',
-      ssml: `<speak>${GREETING}</speak>`,
+      ssml: `<speak><voice name="Matthew">${GREETING}</voice></speak>`,
     });
     expect(response.body.response.shouldEndSession).toBe(true);
   });

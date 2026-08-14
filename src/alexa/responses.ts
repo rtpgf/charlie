@@ -1,5 +1,7 @@
 import type { ResponseEnvelope } from 'ask-sdk-model';
 
+import { config } from '../config.js';
+
 /**
  * Minimal Alexa response envelope builders.
  *
@@ -10,6 +12,22 @@ import type { ResponseEnvelope } from 'ask-sdk-model';
 
 function escapeSsml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Charlie speaks in a named Polly voice rather than the device default.
+ *
+ * Charlie is a he in the family's language, and a skill inherits the device's
+ * Alexa voice unless it says otherwise. One wrapper here rather than at each
+ * call site, so no line of Charlie's can be written in a different voice by
+ * accident. Set ALEXA_VOICE to '' to use the device voice.
+ */
+function inCharliesVoice(escaped: string): string {
+  const voice = config.alexa.voice;
+  // Polly voice names are plain letters. Anything else is a misconfiguration,
+  // and it would be going into an SSML attribute, so it does not go in at all.
+  if (!voice || !/^[A-Za-z]+$/.test(voice)) return escaped;
+  return `<voice name="${voice}">${escaped}</voice>`;
 }
 
 interface SpeakOptions {
@@ -29,7 +47,7 @@ export function speak(text: string, options: SpeakOptions = {}): ResponseEnvelop
     response: {
       outputSpeech: {
         type: 'SSML',
-        ssml: `<speak>${escapeSsml(text)}</speak>`,
+        ssml: `<speak>${inCharliesVoice(escapeSsml(text))}</speak>`,
       },
       ...(options.cardTitle
         ? { card: { type: 'Simple' as const, title: options.cardTitle, content: text } }

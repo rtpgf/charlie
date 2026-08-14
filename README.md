@@ -193,7 +193,7 @@ Expected response:
 {
   "version": "1.0",
   "response": {
-    "outputSpeech": { "type": "SSML", "ssml": "<speak>Hi. I'm Charlie. Weekend Charlie is alive.</speak>" },
+    "outputSpeech": { "type": "SSML", "ssml": "<speak><voice name=\"Matthew\">Hi. I'm Charlie. Weekend Charlie is alive.</voice></speak>" },
     "card": { "type": "Simple", "title": "Charlie", "content": "Hi. I'm Charlie. Weekend Charlie is alive." },
     "shouldEndSession": true
   }
@@ -696,6 +696,25 @@ deliberately narrow — one token in, one image out, no listing and no parameter
 A forged token, an expired one, and a photo that does not exist all return the
 same bare `404`, so nothing leaks about which photos exist.
 
+#### Devices are sent a screen-sized copy, never the camera original
+
+A phone camera produces about 3072 × 4096 — 12.6 megapixels for a screen around
+1280 × 800. An Echo Show does not decode it, and reports nothing when it gives
+up: the caption renders and the photo silently never appears.
+
+So Charlie stores a display copy beside the original, longest edge 1600px, and
+serves that. The original is never modified and never thrown away; the route
+falls back to it when no display copy exists.
+
+Photos stored before this existed need one made:
+
+```bash
+npm run media:displays
+```
+
+It reads the originals from Charlie's own storage rather than from Meta, which
+keeps inbound media ids for only about a week, and is safe to re-run.
+
 Set `PUBLIC_BASE_URL` and `MEDIA_LINK_SECRET` to enable it. With either unset,
 Alexa falls back to storage's own signed URL — fine everywhere except a device.
 
@@ -964,6 +983,7 @@ All settings live in `.env` (see `.env.example`).
 | `SUPABASE_MEDIA_BUCKET` | `group-media` | **Private** bucket for group photos                          |
 | `PUBLIC_BASE_URL`       | _(unset)_     | Charlie's own HTTPS origin; photos are served from here       |
 | `MEDIA_LINK_SECRET`     | _(unset)_     | Signs photo links; rotating it revokes every outstanding one  |
+| `ALEXA_VOICE`           | `Matthew`     | Polly voice Charlie speaks in; `''` for the device voice       |
 | `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
 | `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |

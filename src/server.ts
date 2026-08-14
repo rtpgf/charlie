@@ -18,6 +18,7 @@ import {
 } from './knowledge/providers/anthropic.js';
 import { createWhatsAppMediaFetcher, type MediaFetcher } from './media/retrieve.js';
 import { createMediaRouter } from './media/router.js';
+import { createSharpResizer, type ImageResizer } from './media/resize.js';
 import { createSupabaseMediaStore, type MediaStore } from './media/store.js';
 import type { MediaAnalyzer } from './media/types.js';
 import type {
@@ -47,6 +48,8 @@ export interface ServerDeps {
   analyzer?: MediaAnalyzer | undefined;
   /** Serves photos from Charlie's own domain. Absent falls back to storage. */
   link?: MediaLinkConfig | undefined;
+  /** Makes screen-sized copies of photos. Absent means originals are served. */
+  resizer?: ImageResizer | undefined;
 }
 
 /** Only built when Meta credentials are present; WhatsApp stays optional. */
@@ -123,6 +126,7 @@ export function createServer(deps: ServerDeps = {}): Express {
   const fetcher = 'fetcher' in deps ? deps.fetcher : defaultFetcher();
   const analyzer = 'analyzer' in deps ? deps.analyzer : defaultAnalyzer();
   const link = 'link' in deps ? deps.link : defaultLink();
+  const resizer = 'resizer' in deps ? deps.resizer : createSharpResizer();
 
   app.disable('x-powered-by');
 
@@ -137,7 +141,7 @@ export function createServer(deps: ServerDeps = {}): Express {
       messenger,
       extractor,
       matcher,
-      media: { fetcher, store, analyzer },
+      media: { fetcher, store, analyzer, resizer },
     }));
 
   app.post(

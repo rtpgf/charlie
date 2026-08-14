@@ -4,6 +4,7 @@ import request from 'supertest';
 import type { Db } from '../../src/db/index.js';
 import { signMediaToken, verifyMediaToken } from '../../src/media/link.js';
 import { createMediaRouter } from '../../src/media/router.js';
+import { displayStorageKey } from '../../src/media/resize.js';
 import { ingestInboundMessage } from '../../src/messaging/service.js';
 import { parseWhatsAppWebhook } from '../../src/messaging/whatsapp/parse.js';
 import { createSeededTestDb } from '../helpers/db.js';
@@ -11,6 +12,7 @@ import {
   imageWebhook,
   recordingAnalyzer,
   recordingFetcher,
+  recordingResizer,
   recordingStore,
   type RecordingStore,
 } from '../helpers/media.js';
@@ -152,6 +154,46 @@ describe('serving a photo', () => {
     // Indistinguishable from a forged token: the caller learns nothing about
     // which photos exist.
     expect((await request(serve()).get(`/media/${token}`)).status).toBe(404);
+  });
+
+  it('serves the screen-sized copy rather than the camera original', async () => {
+    const { db: db2 } = await createSeededTestDb({ whatsappSenderId: JENNA_WHATSAPP_ID });
+    const store2 = recordingStore();
+    const [message] = parseWhatsAppWebhook(imageWebhook({ mediaId: 'm9', messageId: 'wamid.9' }));
+    await ingestInboundMessage(message!, {
+      db: db2,
+      media: {
+        fetcher: recordingFetcher(),
+        store: store2,
+        analyzer: recordingAnalyzer(),
+        resizer: recordingResizer(),
+      },
+    });
+    const row = await db2.query(`SELECT id, storage_key FROM group_media WHERE status = 'stored'`);
+    const id = row.rows[0]!['id'] as string;
+    const key = row.rows[0]!['storage_key'] as string;
+
+    const app = express();
+    app.use('/media', createMediaRouter({ db: db2, store: store2, secret: SECRET }));
+    const token = signMediaToken({ mediaId: id, expiresAt: inAnHour(), secret: SECRET });
+    const response = await request(app).get(`/media/${token}`);
+
+    // An Echo Show will not decode a 12 megapixel original, and says nothing
+    // when it gives up -- so the device is never sent one.
+    const display = store2.objects.get(displayStorageKey(key))!;
+    expect(display).toBeDefined();
+    expect(response.status).toBe(200);
+    expect(Buffer.from(response.body).equals(Buffer.from(display.bytes))).toBe(true);
+  });
+
+  it('falls back to the original when no screen-sized copy exists', async () => {
+    // Photos stored before resizing existed must still show.
+    const token = signMediaToken({ mediaId, expiresAt: inAnHour(), secret: SECRET });
+
+    const response = await request(serve()).get(`/media/${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.length).toBeGreaterThan(0);
   });
 
   it('serves nothing at all when no signing secret is configured', async () => {
