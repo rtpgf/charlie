@@ -9,8 +9,16 @@ import { logger } from './logger.js';
 import type { Messenger } from './messaging/types.js';
 import { createWhatsAppMessenger } from './messaging/whatsapp/client.js';
 import { createWhatsAppWebhookRouter } from './messaging/whatsapp/webhook.js';
-import { createAnthropicExtractor } from './knowledge/providers/anthropic.js';
-import type { KnowledgeExtractor } from './knowledge/types.js';
+import {
+  createAnthropicActivityMatcher,
+  createAnthropicAgendaNarrator,
+  createAnthropicExtractor,
+} from './knowledge/providers/anthropic.js';
+import type {
+  ActivityMatcher,
+  AgendaNarrator,
+  KnowledgeExtractor,
+} from './knowledge/types.js';
 import { havingTrouble } from './services/speech.js';
 
 export interface ServerDeps {
@@ -21,6 +29,10 @@ export interface ServerDeps {
   messenger?: Messenger | undefined;
   /** Defaults to the configured AI provider. Absent means no extraction. */
   extractor?: KnowledgeExtractor | undefined;
+  /** Defaults to the configured AI provider. Absent falls back to word overlap. */
+  matcher?: ActivityMatcher | undefined;
+  /** Absent means Alexa always speaks the deterministic sentence. */
+  narrator?: AgendaNarrator | undefined;
 }
 
 /** Only built when Meta credentials are present; WhatsApp stays optional. */
@@ -44,11 +56,25 @@ function defaultExtractor(): KnowledgeExtractor | undefined {
   return createAnthropicExtractor({ apiKey, model, effort });
 }
 
+function defaultNarrator(): AgendaNarrator | undefined {
+  const { provider, apiKey, model, effort } = config.ai;
+  if (!apiKey || provider !== 'anthropic' || !config.ai.narrateAgenda) return undefined;
+  return createAnthropicAgendaNarrator({ apiKey, model, effort });
+}
+
+function defaultMatcher(): ActivityMatcher | undefined {
+  const { provider, apiKey, model, effort } = config.ai;
+  if (!apiKey || provider !== 'anthropic') return undefined;
+  return createAnthropicActivityMatcher({ apiKey, model, effort });
+}
+
 export function createServer(deps: ServerDeps = {}): Express {
   const app = express();
   const db: Db = deps.db ?? { query: (text, params) => getPool().query(text, params) };
   const messenger = deps.messenger ?? defaultMessenger();
   const extractor = 'extractor' in deps ? deps.extractor : defaultExtractor();
+  const matcher = 'matcher' in deps ? deps.matcher : defaultMatcher();
+  const narrator = 'narrator' in deps ? deps.narrator : defaultNarrator();
 
   app.disable('x-powered-by');
 
@@ -56,7 +82,7 @@ export function createServer(deps: ServerDeps = {}): Express {
     res.json({ status: 'ok', service: 'weekend-charlie' });
   });
 
-  app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({ db, messenger, extractor }));
+  app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({ db, messenger, extractor, matcher }));
 
   app.post(
     '/alexa',
@@ -84,7 +110,7 @@ export function createServer(deps: ServerDeps = {}): Express {
       logger.info('alexa request', describeRequest(envelope));
 
       try {
-        const response = await handleAlexaRequest(envelope, { db });
+        const response = await handleAlexaRequest(envelope, { db, narrator });
         res.json(response);
       } catch (error: unknown) {
         // Answer in Charlie's voice instead of letting Alexa fall back to its

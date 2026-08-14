@@ -424,6 +424,31 @@ with a warning. Those messages remain reprocessable.
 network, and no cloud database: extractors are injected as fakes through the
 same interface the real provider implements.
 
+### Spoken answers
+
+Alexa's answer is always assembled deterministically from stored rows. Optionally
+(`AI_NARRATE_AGENDA=true`) a model may then *rephrase* that sentence — it decides
+nothing, and its output is checked before Charlie will say it:
+
+- every event still recognizable (subject and a distinctive word from the activity)
+- no clock time that Charlie does not hold
+- uncertainty intact — a `tentative` event must still read as "might"
+
+Any failure, and the deterministic sentence is spoken instead. It only runs when
+an answer has **more than one event**, so the common single-event case stays
+instant and never touches a provider.
+
+```text
+deterministic: Tomorrow, Jenna is coming over around 3 PM, and Hannah might be
+               coming over with Jenna around 3 PM.
+narrated:      Tomorrow, Jenna is coming over around 3 PM, and Hannah might come
+               with her.
+```
+
+Off by default. It buys fluency at the cost of a model call on the one surface
+where a person is standing in front of an Echo waiting for it to talk — and the
+sentence it improves is one event identity should already have made rare.
+
 ### Reprocessing
 
 ```bash
@@ -432,6 +457,37 @@ npm run knowledge:reprocess -- <group_message_id>
 
 Retries extraction for one stored message. A message whose extraction already
 succeeded is left alone; one that failed is retried. No queue, no worker.
+
+### Event identity
+
+Two messages describing the same gathering must not become two events. This is
+**not** a unique key — no field combination works. Keying on `(subject, day)`
+merges two genuine visits; keying on the stated time cannot match an event whose
+time was never stated; keying on the activity text fails because "coming over
+with Jenna" and "tagging along with Jenna" are the same plan in different words.
+The variance is semantic, not structural.
+
+Instead the work is split:
+
+1. **Slot** — deterministic and cheap: `(household, subject_person_id,
+   local_date)`. An unresolved subject or an undated event has no slot and is
+   never merged, so Charlie can't unify two strangers who share a first name.
+2. **Decision** — within a slot only. Time logic stays deterministic (two stated
+   times more than an hour apart are two plans, whatever the wording). The one
+   genuinely semantic question — *do these two phrasings describe the same
+   occasion?* — goes to `ActivityMatcher`, defaulting to "no" on any failure.
+3. **Supersession, not deletion** — the loser keeps its row, its
+   `superseded_reason` (`duplicate` / `updated` / `cancelled`), and its link to
+   the message it came from. The agenda reads live events only.
+
+Cancellation falls out of the same mechanism: "never mind, I'm not coming" is a
+`cancelled` event that supersedes its match in the slot.
+
+Word overlap was tried first and fails in **both** directions — it scores
+"coming over with Jenna" vs "tagging along with Jenna" at 0.33 (misses a real
+duplicate) and "coming over for dinner" vs "coming over for lunch" at 0.60
+(would merge two real meals). It survives only as the fallback when no AI is
+configured.
 
 ### Idempotency
 
@@ -683,6 +739,7 @@ All settings live in `.env` (see `.env.example`).
 | `ANTHROPIC_API_KEY`     | _(unset)_     | Absent disables extraction only                              |
 | `ANTHROPIC_MODEL`       | `claude-opus-5` | Extraction model                                           |
 | `AI_EFFORT`             | `low`         | Thinking depth for extraction                                |
+| `AI_NARRATE_AGENDA`     | `false`       | Let the model rephrase multi-event Alexa answers             |
 
 ## Alexa request verification
 
@@ -803,10 +860,10 @@ Noted while building, deliberately not built:
   Observed on real messages, not hypothetical. Fixing it means giving extraction
   a window of recent group messages, which is a genuine design decision — more
   context also means more chances to attach a claim to the wrong thing.
-- **Event reconciliation.** "Never mind, I'm not coming" is representable as a
-  `cancelled` event but is not matched against the earlier one it cancels.
-  Charlie would store two events. Matching them needs an identity notion for
-  events, which is a milestone of its own — and shares the context problem above.
+- **Identity needs a slot.** Two messages about the same plan sent on different
+  days resolve "tomorrow" to different dates and therefore land in different
+  slots, where they are never compared. Usually correct — the words really do
+  mean different days — but it means a restated plan can still double up.
 - **Dateless events are invisible.** Anything with `starts_at NULL` is stored but
   unreachable through the agenda, which only queries a day range. A "what do you
   know that isn't scheduled?" path would surface them.

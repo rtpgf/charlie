@@ -3,6 +3,8 @@ import type { RequestEnvelope, ResponseEnvelope } from 'ask-sdk-model';
 import type { Db } from '../db/index.js';
 import { answerWhoIs, resolveHousehold } from '../group/service.js';
 import { describeAgenda, getEventsForLocalDate } from '../knowledge/agenda.js';
+import { narrateAgenda } from '../knowledge/narrate.js';
+import type { AgendaNarrator } from '../knowledge/types.js';
 import { findHouseholdTimezone } from '../knowledge/repository.js';
 import { instantToLocalDate } from '../knowledge/timezone.js';
 import { logger } from '../logger.js';
@@ -19,6 +21,8 @@ import { silent, speak } from './responses.js';
 
 export interface HandlerDeps {
   db: Db;
+  /** Optional fluency pass over multi-event answers. */
+  narrator?: AgendaNarrator | undefined;
 }
 
 /** The slot carrying the person being asked about in WhoIsPersonIntent. */
@@ -126,17 +130,36 @@ async function handleAgendaForDate(
       timezone,
       localDate: todayLocalDate,
     });
+    if (slotValue) return speak(missingAgendaDate());
     return speak(
-      slotValue
-        ? missingAgendaDate()
-        : describeAgenda(events, { localDate: todayLocalDate, todayLocalDate, timezone }),
+      await answerFor(deps, events, {
+        localDate: todayLocalDate,
+        todayLocalDate,
+        timezone,
+      }),
       { cardTitle: 'Charlie' },
     );
   }
 
   const events = await getEventsForLocalDate(deps.db, { householdId, timezone, localDate });
-  return speak(describeAgenda(events, { localDate, todayLocalDate, timezone }), {
+  return speak(await answerFor(deps, events, { localDate, todayLocalDate, timezone }), {
     cardTitle: 'Charlie',
+  });
+}
+
+/**
+ * The deterministic sentence is always built, and is what Charlie says unless a
+ * narrator both exists and returns something that passes validation.
+ */
+async function answerFor(
+  deps: HandlerDeps,
+  events: Awaited<ReturnType<typeof getEventsForLocalDate>>,
+  options: { localDate: string; todayLocalDate: string; timezone: string },
+): Promise<string> {
+  const deterministic = describeAgenda(events, options);
+  return narrateAgenda(events, deterministic, {
+    timezone: options.timezone,
+    narrator: deps.narrator,
   });
 }
 

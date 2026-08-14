@@ -8,7 +8,10 @@
  */
 import { config } from '../config.js';
 import { closePool, getPool } from '../db/index.js';
-import { createAnthropicExtractor } from '../knowledge/providers/anthropic.js';
+import {
+  createAnthropicActivityMatcher,
+  createAnthropicExtractor,
+} from '../knowledge/providers/anthropic.js';
 import { learnFromMessage } from '../knowledge/service.js';
 import { logger } from '../logger.js';
 
@@ -27,13 +30,17 @@ async function main(): Promise<void> {
     return;
   }
 
-  const extractor = createAnthropicExtractor({
+  const providerConfig = {
     apiKey: config.ai.apiKey,
     model: config.ai.model,
     effort: config.ai.effort,
-  });
-
-  const result = await learnFromMessage(getPool(), messageId, extractor);
+  };
+  const result = await learnFromMessage(
+    getPool(),
+    messageId,
+    createAnthropicExtractor(providerConfig),
+    createAnthropicActivityMatcher(providerConfig),
+  );
   logger.info('reprocess complete', { messageId, ...result });
   if (result.outcome === 'failed' || result.outcome === 'rejected') process.exitCode = 1;
 }

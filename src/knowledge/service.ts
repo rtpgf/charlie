@@ -9,7 +9,11 @@ import {
   insertEvents,
   insertExtraction,
 } from './repository.js';
-import { EXTRACTION_SCHEMA_VERSION, type KnowledgeExtractor } from './types.js';
+import {
+  EXTRACTION_SCHEMA_VERSION,
+  type ActivityMatcher,
+  type KnowledgeExtractor,
+} from './types.js';
 import { validateProposal } from './validate.js';
 
 /**
@@ -37,6 +41,7 @@ export async function learnFromMessage(
   db: Db,
   groupMessageId: string,
   extractor: KnowledgeExtractor | undefined,
+  matcher?: ActivityMatcher | undefined,
 ): Promise<LearnResult> {
   const logContext = { messageId: groupMessageId };
 
@@ -133,10 +138,12 @@ export async function learnFromMessage(
   // two, a retry re-inserts nothing (unique on source_id + sequence) and
   // completes the marker. The reverse order could strand a message with an
   // accepted extraction and no events, unretryable.
-  const eventsAccepted = await insertEvents(db, {
+  const written = await insertEvents(db, {
     householdId: message.householdId,
     sourceMessageId: message.id,
     events: validated.events,
+    timezone,
+    matcher,
   });
 
   await insertExtraction(db, {
@@ -151,12 +158,16 @@ export async function learnFromMessage(
   logger.info('knowledge extraction succeeded', {
     ...logContext,
     eventsProposed: validated.events.length,
-    eventsAccepted,
+    eventsAccepted: written.inserted,
     eventsRejected: validated.rejections.length,
+    // Reconciliation against what Charlie already knew.
+    duplicatesIgnored: written.duplicates,
+    eventsUpdated: written.updates,
+    eventsCancelled: written.cancellations,
   });
 
   return {
     outcome: validated.events.length === 0 ? 'nothing_to_learn' : 'learned',
-    eventsAccepted,
+    eventsAccepted: written.inserted,
   };
 }

@@ -3,6 +3,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { logger } from '../../logger.js';
 import {
   EXTRACTION_SCHEMA_VERSION,
+  type ActivityMatcher,
+  type AgendaNarrator,
   type ExtractionContext,
   type KnowledgeExtractor,
   type KnowledgeProposal,
@@ -170,4 +172,129 @@ function formatLocal(date: Date, timeZone: string): string {
     formatter.formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]),
   );
   return `${parts['year']}-${parts['month']}-${parts['day']} ${parts['hour']}:${parts['minute']} (${parts['weekday']})`;
+}
+
+/** Structured yes/no, so nothing has to be parsed out of prose. */
+const MATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['same'],
+  properties: { same: { type: 'boolean' } },
+} as const;
+
+const MATCH_SYSTEM_PROMPT = `You are given two short descriptions of something happening, both involving the same person on the same day. Decide whether they describe the same single occasion, or two separate ones.
+
+Same occasion: different wordings of one plan ("coming over" and "tagging along with Jenna"; "stopping by" and "dropping in").
+Separate occasions: genuinely different activities ("coming over" and "dropping off a prescription"), or the same activity clearly happening twice.
+
+If you are not confident they are the same occasion, answer false. Saying something twice is a much smaller problem than merging away a real plan.`;
+
+/**
+ * Asked only about candidates already narrowed to the same group, subject and
+ * day, so a wrong answer can merge at most two same-day events for one person.
+ * Defaults to "not the same" on any failure.
+ */
+export function createAnthropicActivityMatcher(
+  config: AnthropicExtractorConfig,
+): ActivityMatcher {
+  const client = new Anthropic({ apiKey: config.apiKey });
+
+  return {
+    provider: PROVIDER,
+    model: config.model,
+
+    async isSameActivity(a, b, context) {
+      const response = await client.messages.create({
+        model: config.model,
+        max_tokens: 2000,
+        system: MATCH_SYSTEM_PROMPT,
+        output_config: {
+          effort: 'low',
+          format: { type: 'json_schema', schema: MATCH_SCHEMA },
+        },
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text:
+                  `Person: ${context.subject ?? 'unspecified'}\n` +
+                  `Day: ${context.localDate}\n\n` +
+                  `A: ${a}\nB: ${b}`,
+              },
+            ],
+          },
+        ],
+      });
+
+      if (response.stop_reason === 'refusal') return false;
+
+      const text = response.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+
+      try {
+        return (JSON.parse(text) as { same?: unknown }).same === true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+const NARRATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sentence'],
+  properties: { sentence: { type: 'string' } },
+} as const;
+
+const NARRATE_SYSTEM_PROMPT = `You are given one sentence a voice assistant is about to speak to an older adult about their day. Rewrite it to sound natural when spoken aloud.
+
+Rules:
+- Say exactly the same things. Do not add, remove, merge, or reorder events.
+- Keep every name, and keep every time exactly as written. Never introduce a time that is not already there.
+- Keep uncertainty exactly as strong. "might" must stay "might" — never turn a possibility into a plan.
+- Prefer short, plain, spoken English. Avoid repeating the same phrase twice; use a pronoun or restructure instead.
+- Return one sentence, or at most two short ones.`;
+
+/**
+ * Only ever asked to rephrase a sentence Charlie already built, and its output
+ * is validated before use -- see src/knowledge/narrate.ts.
+ */
+export function createAnthropicAgendaNarrator(
+  config: AnthropicExtractorConfig,
+): AgendaNarrator {
+  const client = new Anthropic({ apiKey: config.apiKey });
+
+  return {
+    provider: PROVIDER,
+    model: config.model,
+
+    async rephraseAgenda(deterministic: string): Promise<string> {
+      const response = await client.messages.create({
+        model: config.model,
+        max_tokens: 2000,
+        system: NARRATE_SYSTEM_PROMPT,
+        output_config: {
+          effort: 'low',
+          format: { type: 'json_schema', schema: NARRATE_SCHEMA },
+        },
+        messages: [{ role: 'user', content: [{ type: 'text', text: deterministic }] }],
+      });
+
+      if (response.stop_reason === 'refusal') throw new Error('narration refused');
+
+      const text = response.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+
+      const parsed = JSON.parse(text) as { sentence?: unknown };
+      if (typeof parsed.sentence !== 'string') throw new Error('narration missing sentence');
+      return parsed.sentence;
+    },
+  };
 }

@@ -83,6 +83,38 @@ export interface KnowledgeProposal {
   uncertainties: string[];
 }
 
+/**
+ * Judging whether two activity phrases describe the same underlying event.
+ *
+ * Deliberately the narrowest possible question. Everything structural about
+ * identity -- which events are even comparable, how stated times relate,
+ * cancellation, supersession -- stays deterministic. Only "do these two
+ * phrasings mean the same thing?" is delegated, because word overlap cannot
+ * tell "tagging along" from "coming over" and no amount of tuning will.
+ */
+export interface ActivityMatcher {
+  readonly provider: string;
+  readonly model: string;
+  isSameActivity(
+    a: string,
+    b: string,
+    context: { subject: string | null; localDate: string },
+  ): Promise<boolean>;
+}
+
+/**
+ * Rephrasing an agenda answer Charlie already assembled.
+ *
+ * Given a complete, correct, slightly stilted sentence, return a smoother one
+ * saying exactly the same thing. It decides nothing: the facts, the times, and
+ * the certainty are already fixed, and the result is validated before use.
+ */
+export interface AgendaNarrator {
+  readonly provider: string;
+  readonly model: string;
+  rephraseAgenda(deterministic: string): Promise<string>;
+}
+
 export interface KnowledgeExtractor {
   readonly provider: string;
   readonly model: string;

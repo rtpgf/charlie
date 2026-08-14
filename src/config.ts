@@ -40,6 +40,11 @@ export const config = {
     model: process.env.ANTHROPIC_MODEL || 'claude-opus-5',
     /** Extraction is a small task; low keeps webhook handling prompt. */
     effort: (process.env.AI_EFFORT || 'low') as 'low' | 'medium' | 'high',
+    /**
+     * Rephrase multi-event Alexa answers. Off by default: it adds a model call
+     * to the one surface where someone is waiting for the Echo to speak.
+     */
+    narrateAgenda: process.env.AI_NARRATE_AGENDA === 'true',
   },
   whatsapp: {
     /** Shared with Meta at subscription time; echoes back hub.challenge. */

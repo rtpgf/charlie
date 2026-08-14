@@ -32,6 +32,7 @@ export async function getEventsForLocalDate(
        FROM group_event
       WHERE household_id = $1
         AND status <> 'cancelled'
+        AND superseded_by IS NULL
         AND starts_at >= $2 AND starts_at < $3
       -- Events with a stated time come first, in time order; ones with no time
       -- read better trailing the day's plan than heading it.

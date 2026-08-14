@@ -1,7 +1,7 @@
 import type { Db } from '../db/index.js';
 import { findMembership } from '../group/membership.js';
 import { learnFromMessage } from '../knowledge/service.js';
-import type { KnowledgeExtractor } from '../knowledge/types.js';
+import type { ActivityMatcher, KnowledgeExtractor } from '../knowledge/types.js';
 import { logger } from '../logger.js';
 import { findSenderByContact, insertGroupMessage } from './repository.js';
 import {
@@ -30,6 +30,8 @@ export interface MessagingDeps {
   messenger?: Messenger | undefined;
   /** Absent when no AI provider is configured; ingestion still works. */
   extractor?: KnowledgeExtractor | undefined;
+  /** Judges whether a new event restates one Charlie already knows. */
+  matcher?: ActivityMatcher | undefined;
 }
 
 /** Deliberately dumb and deterministic. No AI authored this. */
@@ -109,7 +111,7 @@ export async function ingestInboundMessage(
   // the source message exactly as stored, available for reprocessing.
   const storedId = await findStoredMessageId(deps.db, message);
   if (storedId) {
-    await learnFromMessage(deps.db, storedId, deps.extractor);
+    await learnFromMessage(deps.db, storedId, deps.extractor, deps.matcher);
   }
 
   // Acknowledgement is best-effort: the message is already safely stored, and
