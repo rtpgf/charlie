@@ -375,7 +375,8 @@ describe('AI failure', () => {
     await ingestInboundMessage(inbound(), { db, messenger, extractor: brokenExtractor() });
 
     expect(await events(db)).toHaveLength(0);
-    expect(messenger.sent[0]!.text).toBe("Got it. I've saved your message.");
+    // Still acknowledged honestly: stored, nothing claimed about understanding.
+    expect(messenger.reactions).toHaveLength(1);
   });
 
   it('still stores the message when no extractor is configured at all', async () => {

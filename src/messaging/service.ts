@@ -34,8 +34,17 @@ export interface MessagingDeps {
   matcher?: ActivityMatcher | undefined;
 }
 
-/** Deliberately dumb and deterministic. No AI authored this. */
-const ACKNOWLEDGEMENT = "Got it. I've saved your message.";
+/**
+ * How Charlie acknowledges. Deliberately dumb and deterministic; no AI wrote
+ * any of it.
+ *
+ * Success is a reaction rather than a sentence: the family thread belongs to
+ * the family, and a bot replying to every message makes it feel like a support
+ * channel. A failure still needs words -- a thumbs-up cannot say "I didn't save
+ * that" -- so text is reserved for when something is actually wrong.
+ */
+const ACKNOWLEDGEMENT_EMOJI = '\u{1F44D}';
+const ACKNOWLEDGEMENT_TEXT = "Got it. I've saved your message.";
 const STORAGE_FAILURE = "I'm having trouble saving that right now. Please try again later.";
 
 export async function ingestInboundMessage(
@@ -115,9 +124,9 @@ export async function ingestInboundMessage(
   }
 
   // Acknowledgement is best-effort: the message is already safely stored, and
-  // a failure to reply must not undo that. The wording never claims more than
-  // storage -- Charlie does not announce what it learned.
-  await trySend(deps.messenger, message.senderExternalId, ACKNOWLEDGEMENT, logContext);
+  // a failure to reply must not undo that. It never claims more than storage --
+  // Charlie does not announce what it learned.
+  await tryAcknowledge(deps.messenger, message, logContext);
 
   return 'stored';
 }
@@ -133,6 +142,55 @@ async function findStoredMessageId(
   return (result.rows[0]?.['id'] as string | undefined) ?? null;
 }
 
+/**
+ * Reacts to the message. Falls back to a sentence if the reaction itself fails,
+ * so a provider that will not accept reactions leaves the sender with some
+ * signal rather than silence -- which is indistinguishable from Charlie being
+ * broken.
+ */
+async function tryAcknowledge(
+  messenger: Messenger | undefined,
+  message: InboundGroupMessage,
+  logContext: Record<string, unknown>,
+): Promise<void> {
+  if (!messenger) {
+    logger.warn('no outbound messenger configured, skipping acknowledgement', logContext);
+    return;
+  }
+
+  try {
+    await messenger.react(
+      message.senderExternalId,
+      message.externalMessageId,
+      ACKNOWLEDGEMENT_EMOJI,
+    );
+    return;
+  } catch (error: unknown) {
+    logOutboundFailure(error, { ...logContext, acknowledgement: 'reaction' });
+  }
+
+  await trySend(messenger, message.senderExternalId, ACKNOWLEDGEMENT_TEXT, logContext);
+}
+
+function logOutboundFailure(error: unknown, logContext: Record<string, unknown>): void {
+  // Classified so an expired credential is distinguishable from a network
+  // blip. Inbound ingestion is unaffected either way -- see README.
+  if (error instanceof OutboundMessageError) {
+    logger.error('whatsapp outbound failed', {
+      ...logContext,
+      category: error.category,
+      httpStatus: error.httpStatus,
+      providerCode: error.providerCode,
+    });
+    return;
+  }
+  logger.error('whatsapp outbound failed', {
+    ...logContext,
+    category: 'unknown',
+    reason: error instanceof Error ? error.message : 'unknown',
+  });
+}
+
 async function trySend(
   messenger: Messenger | undefined,
   to: string,
@@ -146,21 +204,6 @@ async function trySend(
   try {
     await messenger.sendText(to, text);
   } catch (error: unknown) {
-    // Classified so an expired credential is distinguishable from a network
-    // blip. Inbound ingestion is unaffected either way -- see README.
-    if (error instanceof OutboundMessageError) {
-      logger.error('whatsapp outbound failed', {
-        ...logContext,
-        category: error.category,
-        httpStatus: error.httpStatus,
-        providerCode: error.providerCode,
-      });
-      return;
-    }
-    logger.error('whatsapp outbound failed', {
-      ...logContext,
-      category: 'unknown',
-      reason: error instanceof Error ? error.message : 'unknown',
-    });
+    logOutboundFailure(error, logContext);
   }
 }

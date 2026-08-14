@@ -35,6 +35,13 @@ export interface InboundGroupMessage {
  */
 export interface Messenger {
   sendText(toExternalId: string, text: string): Promise<void>;
+  /**
+   * React to a message the person sent, rather than replying to it.
+   *
+   * Quieter than a sentence: the family member sees Charlie noticed, without a
+   * bot answering every message in a thread meant for people.
+   */
+  react(toExternalId: string, externalMessageId: string, emoji: string): Promise<void>;
 }
 
 /**

@@ -21,41 +21,58 @@ export interface WhatsAppClientConfig {
 export function createWhatsAppMessenger(config: WhatsAppClientConfig): Messenger {
   const endpoint = `https://graph.facebook.com/${config.graphApiVersion}/${config.phoneNumberId}/messages`;
 
-  return {
-    async sendText(toExternalId: string, text: string): Promise<void> {
-      let response: Response;
-      try {
-        response = await fetch(endpoint, {
+  /** Both sends go through the same endpoint, error handling and classification. */
+  async function post(body: unknown): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           // The token is only ever a header value, never logged.
           Authorization: `Bearer ${config.accessToken}`,
           'Content-Type': 'application/json',
         },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: toExternalId,
-            type: 'text',
-            text: { body: text },
-          }),
-        });
-      } catch (error: unknown) {
-        throw new OutboundMessageError(
-          error instanceof Error ? error.message : 'network failure',
-          { category: 'network' },
-        );
-      }
+        body: JSON.stringify(body),
+      });
+    } catch (error: unknown) {
+      throw new OutboundMessageError(
+        error instanceof Error ? error.message : 'network failure',
+        { category: 'network' },
+      );
+    }
 
-      if (!response.ok) {
-        // Meta's error body carries a code and message but never credentials.
-        const detail = await safeErrorDetail(response);
-        throw new OutboundMessageError(`WhatsApp send failed with status ${response.status}`, {
-          category: classify(response.status, detail.code),
-          httpStatus: response.status,
-          providerCode: detail.code,
-        });
-      }
+    if (!response.ok) {
+      // Meta's error body carries a code and message but never credentials.
+      const detail = await safeErrorDetail(response);
+      throw new OutboundMessageError(`WhatsApp send failed with status ${response.status}`, {
+        category: classify(response.status, detail.code),
+        httpStatus: response.status,
+        providerCode: detail.code,
+      });
+    }
+  }
+
+  return {
+    async sendText(toExternalId: string, text: string): Promise<void> {
+      await post({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toExternalId,
+        type: 'text',
+        text: { body: text },
+      });
+    },
+
+    async react(toExternalId: string, externalMessageId: string, emoji: string): Promise<void> {
+      // A reaction is a service message like any other, so the same 24-hour
+      // customer service window applies.
+      await post({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toExternalId,
+        type: 'reaction',
+        reaction: { message_id: externalMessageId, emoji },
+      });
     },
   };
 }

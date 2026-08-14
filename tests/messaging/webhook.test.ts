@@ -72,7 +72,7 @@ describe('POST /webhooks/whatsapp', () => {
 
     const rows = await db.query('SELECT body FROM group_message');
     expect(rows.rows).toHaveLength(1);
-    expect(messenger.sent).toHaveLength(1);
+    expect(messenger.reactions).toHaveLength(1);
   });
 
   it('rejects an unsigned request', async () => {
@@ -121,6 +121,7 @@ describe('POST /webhooks/whatsapp', () => {
     const rows = await db.query('SELECT body FROM group_message');
     expect(rows.rows).toHaveLength(0);
     expect(messenger.sent).toEqual([]);
+    expect(messenger.reactions).toEqual([]);
   });
 
   it('is idempotent across a redelivered webhook', async () => {
@@ -130,7 +131,7 @@ describe('POST /webhooks/whatsapp', () => {
     expect(second.status).toBe(200);
     const rows = await db.query('SELECT body FROM group_message');
     expect(rows.rows).toHaveLength(1);
-    expect(messenger.sent).toHaveLength(1);
+    expect(messenger.reactions).toHaveLength(1);
   });
 });
 

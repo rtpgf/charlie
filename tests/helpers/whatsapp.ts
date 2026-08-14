@@ -111,14 +111,20 @@ export function statusWebhook(): unknown {
 
 export interface RecordingMessenger extends Messenger {
   sent: Array<{ to: string; text: string }>;
+  reactions: Array<{ to: string; messageId: string; emoji: string }>;
 }
 
 export function recordingMessenger(): RecordingMessenger {
   const sent: Array<{ to: string; text: string }> = [];
+  const reactions: Array<{ to: string; messageId: string; emoji: string }> = [];
   return {
     sent,
+    reactions,
     sendText: async (to, text) => {
       sent.push({ to, text });
+    },
+    react: async (to, messageId, emoji) => {
+      reactions.push({ to, messageId, emoji });
     },
   };
 }
@@ -126,19 +132,36 @@ export function recordingMessenger(): RecordingMessenger {
 export function failingMessenger(): Messenger {
   return {
     sendText: () => Promise.reject(new Error('WhatsApp send failed with status 500')),
+    react: () => Promise.reject(new Error('WhatsApp send failed with status 500')),
+  };
+}
+
+/** Rejects reactions but accepts text, exercising the fallback. */
+export function reactionUnsupportedMessenger(): RecordingMessenger {
+  const base = recordingMessenger();
+  return {
+    ...base,
+    react: () =>
+      Promise.reject(
+        new OutboundMessageError('WhatsApp send failed with status 400', {
+          category: 'provider_error',
+          httpStatus: 400,
+          providerCode: 100,
+        }),
+      ),
   };
 }
 
 /** Simulates Meta rejecting an expired or invalid access token. */
 export function expiredCredentialMessenger(): Messenger {
-  return {
-    sendText: () =>
-      Promise.reject(
-        new OutboundMessageError('WhatsApp send failed with status 401', {
-          category: 'authentication',
-          httpStatus: 401,
-          providerCode: 190,
-        }),
-      ),
-  };
+  const reject = () =>
+    Promise.reject(
+      new OutboundMessageError('WhatsApp send failed with status 401', {
+        category: 'authentication',
+        httpStatus: 401,
+        providerCode: 190,
+      }),
+    );
+  return { sendText: reject, react: reject };
 }
+

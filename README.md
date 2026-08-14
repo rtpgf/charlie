@@ -356,6 +356,13 @@ exercising the denial path.
 
 ## Knowledge ingestion
 
+When a message is stored, Charlie **reacts with 👍** rather than replying. The
+family thread belongs to the family, and a bot answering every message turns it
+into a support channel. Words are reserved for when something is wrong — a
+thumbs-up cannot say "I didn't save that". If the provider rejects the reaction,
+Charlie falls back to the sentence, because silence is indistinguishable from
+being broken.
+
 ```text
 group message (stored verbatim)
         ↓  permission check — blocked/pending stop here
@@ -641,7 +648,8 @@ return `503` rather than accepting unverified traffic. Alexa is unaffected.
   `recognized unsupported inbound media message` with metadata normalized for a
   later milestone. Nothing is downloaded or stored.
 - **Storage failure never claims success.** If the database is unavailable
-  Charlie replies "I'm having trouble saving that right now" instead.
+  Charlie replies "I'm having trouble saving that right now" instead of
+  reacting — the reaction means *saved*, and nothing else.
 - **Acknowledgment failure never undoes storage.** The message stays; the send
   failure is logged.
 

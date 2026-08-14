@@ -70,12 +70,28 @@ describe('ingesting a recognized text message', () => {
     expect(rows[0]!['body']).toBe(original);
   });
 
-  it('acknowledges the sender', async () => {
+  it('acknowledges by reacting to the message rather than replying', async () => {
     const { db } = await seeded();
     const messenger = recordingMessenger();
+    const message = messageFrom(textMessageWebhook());
+
+    await ingestInboundMessage(message, { db, messenger });
+
+    expect(messenger.reactions).toEqual([
+      { to: JENNA_WHATSAPP_ID, messageId: message.externalMessageId, emoji: '\u{1F44D}' },
+    ]);
+    // The family thread stays free of bot chatter.
+    expect(messenger.sent).toEqual([]);
+  });
+
+  it('falls back to a reply when the provider will not accept a reaction', async () => {
+    const { db } = await seeded();
+    const { reactionUnsupportedMessenger } = await import('../helpers/whatsapp.js');
+    const messenger = reactionUnsupportedMessenger();
 
     await ingestInboundMessage(messageFrom(textMessageWebhook()), { db, messenger });
 
+    // Silence would be indistinguishable from Charlie being broken.
     expect(messenger.sent).toEqual([
       { to: JENNA_WHATSAPP_ID, text: "Got it. I've saved your message." },
     ]);
@@ -103,7 +119,7 @@ describe('duplicate provider delivery', () => {
     await ingestInboundMessage(message, { db, messenger });
     await ingestInboundMessage(message, { db, messenger });
 
-    expect(messenger.sent).toHaveLength(1);
+    expect(messenger.reactions).toHaveLength(1);
   });
 
   it('treats a different provider message id as a new message', async () => {
@@ -155,6 +171,7 @@ describe('unknown sender', () => {
     });
 
     expect(messenger.sent).toEqual([]);
+    expect(messenger.reactions).toEqual([]);
   });
 });
 
@@ -171,6 +188,7 @@ describe('unsupported content', () => {
     expect(outcome).toBe('unsupported_content');
     expect(await storedMessages(db)).toHaveLength(0);
     expect(messenger.sent).toEqual([]);
+    expect(messenger.reactions).toEqual([]);
   });
 });
 
