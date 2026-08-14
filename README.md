@@ -666,8 +666,15 @@ return `503` rather than accepting unverified traffic. Alexa is unaffected.
 
 ### WhatsApp credential durability
 
-**The development configuration currently uses a temporary Meta access token.**
-Those expire in roughly 24 hours, and the failure mode is deceptive:
+**The current credential is a System User token, valid until 2026-10-13.**
+Verify at any time with Meta's `debug_token` endpoint — a System User token
+reports `type: SYSTEM_USER`; the temporary one from API Setup reports
+`type: USER` and expires at the top of the next clock hour, not in 24 hours as
+its documentation suggests.
+
+Sixty days is not *never*. Meta offers a `Never` expiration on System User
+tokens; this one was issued with the 60-day option, so it will expire — and the
+failure mode is deceptive whichever token you use:
 
 ```text
 Inbound webhook delivery   still works
@@ -689,7 +696,7 @@ failures so it is unambiguous in the logs:
 never logged. A failed send never rolls back a stored message or an accepted
 event, and never causes reprocessing.
 
-**Moving to a durable System User token** (external Meta configuration plus one
+**Issuing a System User token** (external Meta configuration plus one
 environment variable — no code change):
 
 1. [business.facebook.com](https://business.facebook.com) → **Business
@@ -701,8 +708,11 @@ environment variable — no code change):
    longest available expiration (System User tokens can be set to never expire).
 4. Replace `WHATSAPP_ACCESS_TOKEN` in `.env` and restart the server.
 
+Choose **Never** at step 3 unless you have a reason not to; a 60-day token
+expires quietly, months later, long after the setup is out of mind.
+
 Automatic rotation and secret-management infrastructure are deliberately out of
-scope.
+scope — which is exactly why the expiry date is worth writing down.
 
 ### Meta platform limits
 
