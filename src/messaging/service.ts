@@ -3,8 +3,9 @@ import type { Db } from '../db/index.js';
 import { findMembership } from '../group/membership.js';
 import { learnFromMessage } from '../knowledge/service.js';
 import type { ActivityMatcher, KnowledgeExtractor } from '../knowledge/types.js';
+import { ingestMedia, type MediaDeps } from '../media/service.js';
 import { logger } from '../logger.js';
-import { findSenderByContact, insertGroupMessage } from './repository.js';
+import { findSenderByContact, insertGroupMessage, type SenderIdentity } from './repository.js';
 import {
   maskIdentity,
   OutboundMessageError,
@@ -33,6 +34,8 @@ export interface MessagingDeps {
   extractor?: KnowledgeExtractor | undefined;
   /** Judges whether a new event restates one Charlie already knows. */
   matcher?: ActivityMatcher | undefined;
+  /** Retrieval, storage and analysis for photos. Absent disables media. */
+  media?: Omit<MediaDeps, 'db'> | undefined;
 }
 
 /**
@@ -56,22 +59,31 @@ export async function ingestInboundMessage(
     sender: maskIdentity(message.senderExternalId),
   };
 
-  // Milestone 3 handles text only. Media is recognized and normalized so a
-  // later milestone can fetch it, but nothing is downloaded or persisted.
-  if (message.text === undefined || message.text === '') {
-    logger.info('recognized unsupported inbound media message', {
+  const hasText = message.text !== undefined && message.text !== '';
+  const hasMedia = message.media.length > 0;
+
+  // Nothing Charlie can use -- a sticker, a location, a contact card.
+  if (!hasText && !hasMedia) {
+    logger.info('recognized unsupported inbound message', {
       ...logContext,
       mediaCount: message.media.length,
-      mediaTypes: message.media.map((item) => item.mediaType ?? 'unknown'),
     });
     return 'unsupported_content';
   }
 
   let stored: boolean;
-  try {
-    const sender = await findSenderByContact(deps.db, message.channel, message.senderExternalId);
+  // Assigned inside the try; the catch always returns, so it is set by the time
+  // the code after the block runs -- stated as optional rather than asserted.
+  let sender: SenderIdentity | undefined;
 
-    if (!sender) {
+  try {
+    const resolved = await findSenderByContact(
+      deps.db,
+      message.channel,
+      message.senderExternalId,
+    );
+
+    if (!resolved) {
       // Deliberately does nothing else: no person is created, no message is
       // stored, and no reply is sent. Replying would confirm to an unknown
       // number that this line is active, and storing would attach a stranger's
@@ -79,10 +91,11 @@ export async function ingestInboundMessage(
       logger.warn('inbound message from unrecognized sender', logContext);
       return 'unknown_sender';
     }
+    sender = resolved;
 
     // Membership and ingestion permission are checked before the message is
-    // stored, so a blocked member's words never enter Charlie's knowledge at
-    // all -- and the extractor is unreachable from this branch by construction.
+    // stored, so a blocked member's words *and photos* never enter Charlie's
+    // knowledge at all -- media retrieval is unreachable from this branch.
     const membership = await findMembership(deps.db, sender.householdId, sender.personId);
 
     if (!membership || membership.ingestionStatus !== 'allowed') {
@@ -119,12 +132,19 @@ export async function ingestInboundMessage(
 
   logger.info('stored inbound group message', { ...logContext, messageStored: true });
 
-  // Extraction runs only for a stored message from an allowed sender. It is
-  // deliberately not allowed to affect the outcome: a provider failure leaves
-  // the source message exactly as stored, available for reprocessing.
+  // Both run only for a stored message from an allowed sender, and neither is
+  // allowed to affect the outcome: a provider failure leaves the source message
+  // exactly as stored, available for reprocessing.
   const storedId = await findStoredMessageId(deps.db, message);
-  if (storedId) {
-    await learnFromMessage(deps.db, storedId, deps.extractor, deps.matcher);
+  if (storedId && sender) {
+    if (hasMedia) {
+      // Meta's media URLs expire in about five minutes, so retrieval happens
+      // now rather than on a later pass.
+      await ingestMedia(message, sender, storedId, { db: deps.db, ...deps.media });
+    }
+    if (hasText) {
+      await learnFromMessage(deps.db, storedId, deps.extractor, deps.matcher);
+    }
   }
 
   // Acknowledgement is best-effort: the message is already safely stored, and

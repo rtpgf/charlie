@@ -3,7 +3,7 @@ import { json, Router, type RequestHandler } from 'express';
 import { config } from '../../config.js';
 import type { Db } from '../../db/index.js';
 import { logger } from '../../logger.js';
-import { ingestInboundMessage } from '../service.js';
+import { ingestInboundMessage, type MessagingDeps } from '../service.js';
 import type { ActivityMatcher, KnowledgeExtractor } from '../../knowledge/types.js';
 import type { Messenger } from '../types.js';
 import { parseWhatsAppWebhook } from './parse.js';
@@ -24,6 +24,7 @@ export interface WhatsAppWebhookDeps {
   messenger?: Messenger | undefined;
   extractor?: KnowledgeExtractor | undefined;
   matcher?: ActivityMatcher | undefined;
+  media?: MessagingDeps['media'];
 }
 
 export function createWhatsAppWebhookRouter(deps: WhatsAppWebhookDeps): Router {

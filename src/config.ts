@@ -46,6 +46,15 @@ export const config = {
      */
     narrateAgenda: process.env.AI_NARRATE_AGENDA === 'true',
   },
+  storage: {
+    /**
+     * Supabase Storage for group photos. A PRIVATE bucket: media is only ever
+     * reachable through short-lived signed URLs.
+     */
+    url: process.env.SUPABASE_URL || undefined,
+    serviceKey: process.env.SUPABASE_SERVICE_KEY || undefined,
+    bucket: process.env.SUPABASE_MEDIA_BUCKET || 'group-media',
+  },
   messaging: {
     /**
      * How Charlie acknowledges, without taking a turn in the conversation.

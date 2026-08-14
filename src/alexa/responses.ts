@@ -17,6 +17,10 @@ interface SpeakOptions {
   cardTitle?: string;
   /** Keep the microphone open for a follow-up. Defaults to false. */
   keepSessionOpen?: boolean;
+  /** APL directives, for devices with a screen. Omitted otherwise. */
+  directives?: Record<string, unknown>[] | undefined;
+  /** Carried across turns so "next" knows which photo is in view. */
+  sessionAttributes?: Record<string, unknown> | undefined;
 }
 
 export function speak(text: string, options: SpeakOptions = {}): ResponseEnvelope {
@@ -30,8 +34,15 @@ export function speak(text: string, options: SpeakOptions = {}): ResponseEnvelop
       ...(options.cardTitle
         ? { card: { type: 'Simple' as const, title: options.cardTitle, content: text } }
         : {}),
+      // ask-sdk-model's Directive union does not include the APL directives,
+      // which are documented separately by Amazon; the shape is checked where
+      // it is built, in src/alexa/apl.ts.
+      ...(options.directives?.length
+        ? { directives: options.directives as unknown as ResponseEnvelope['response']['directives'] }
+        : {}),
       shouldEndSession: !options.keepSessionOpen,
     },
+    ...(options.sessionAttributes ? { sessionAttributes: options.sessionAttributes } : {}),
   };
 }
 

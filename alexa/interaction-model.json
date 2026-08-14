@@ -69,6 +69,58 @@
             "what's happening",
             "what's going on today"
           ]
+        },
+        {
+          "name": "AMAZON.NextIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.PreviousIntent",
+          "samples": []
+        },
+        {
+          "name": "ShowLatestPicturesIntent",
+          "samples": [
+            "to show me the latest pictures",
+            "to show me the latest picture",
+            "show me the latest pictures",
+            "show me the latest picture",
+            "to show me the newest pictures",
+            "show me the new pictures",
+            "to show me recent pictures",
+            "show me recent pictures",
+            "to show me the pictures",
+            "show me the pictures",
+            "what pictures do we have",
+            "are there any new pictures",
+            "to show me the rest",
+            "show me the rest"
+          ]
+        },
+        {
+          "name": "WhoSentThisIntent",
+          "samples": [
+            "who sent these",
+            "who sent this",
+            "who sent that",
+            "who sent them",
+            "who took these",
+            "who shared these",
+            "who shared this"
+          ]
+        },
+        {
+          "name": "WhenWasThisSharedIntent",
+          "samples": [
+            "when did she send them",
+            "when did he send them",
+            "when did they send them",
+            "when did she send this",
+            "when was this sent",
+            "when were these sent",
+            "when did we get these",
+            "when was this shared"
+          ]
         }
       ]
     }

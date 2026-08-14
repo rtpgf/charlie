@@ -175,19 +175,27 @@ describe('unknown sender', () => {
   });
 });
 
-describe('unsupported content', () => {
-  it('recognizes an image without storing or downloading it', async () => {
+describe('media messages', () => {
+  it('stores a photo message, which Milestone 3 could not', async () => {
+    const { db } = await seeded();
+
+    // No media deps configured here, so retrieval cannot succeed -- but the
+    // message is authorized and stored exactly like any other.
+    const outcome = await ingestInboundMessage(messageFrom(imageMessageWebhook()), { db });
+
+    expect(outcome).toBe('stored');
+    expect(await storedMessages(db)).toHaveLength(1);
+  });
+
+  it('ignores a message carrying neither text nor media', async () => {
     const { db } = await seeded();
     const messenger = recordingMessenger();
+    const contentless = { ...messageFrom(textMessageWebhook()), text: undefined, media: [] };
 
-    const outcome = await ingestInboundMessage(messageFrom(imageMessageWebhook()), {
-      db,
-      messenger,
-    });
+    const outcome = await ingestInboundMessage(contentless, { db, messenger });
 
     expect(outcome).toBe('unsupported_content');
     expect(await storedMessages(db)).toHaveLength(0);
-    expect(messenger.sent).toEqual([]);
     expect(messenger.reactions).toEqual([]);
   });
 });

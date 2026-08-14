@@ -9,6 +9,12 @@ import {
   type KnowledgeExtractor,
   type KnowledgeProposal,
 } from '../types.js';
+import {
+  MEDIA_SCHEMA_VERSION,
+  type MediaAnalysisContext,
+  type MediaAnalysisProposal,
+  type MediaAnalyzer,
+} from '../../media/types.js';
 
 /**
  * The one place in Charlie that talks to an AI vendor.
@@ -295,6 +301,113 @@ export function createAnthropicAgendaNarrator(
       const parsed = JSON.parse(text) as { sentence?: unknown };
       if (typeof parsed.sentence !== 'string') throw new Error('narration missing sentence');
       return parsed.sentence;
+    },
+  };
+}
+
+const MEDIA_ANALYSIS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['batchSummary', 'images'],
+  properties: {
+    batchSummary: { type: 'string' },
+    images: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['mediaId', 'description', 'peopleVisible', 'namedPeople'],
+        properties: {
+          mediaId: { type: 'string' },
+          description: { type: 'string' },
+          peopleVisible: { type: 'integer' },
+          namedPeople: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+  },
+} as const;
+
+const MEDIA_SYSTEM_PROMPT = `You describe photos a family shared with their private group assistant. The photos and the family's own caption are given together, in the order they were sent.
+
+For the set, give a short batchSummary of what the occasion appears to be.
+
+For each image, using the mediaId label that precedes it:
+- description: one plain sentence describing what is visible. Plain and factual.
+- peopleVisible: how many people are visible.
+- namedPeople: only names from the supplied known-people list that you believe appear in THIS image. Use a name only when the image and the family's context together make it clear. An empty list is the right answer whenever you are unsure.
+
+Rules:
+- A caption describes the occasion, not every face. "Natalie's soccer team" does not mean every child is Natalie.
+- Never name anyone who is not in the known-people list. Never guess at strangers.
+- Describe only what is visible. Do not infer age, health, disability, race, ethnicity, religion, or emotional or psychological state. "Smiling" is fine; "happy child" is not.
+- Do not guess when the photo was taken.`;
+
+/**
+ * Vision analysis. Reuses the same provider and credentials as extraction --
+ * no second AI vendor for optionality.
+ */
+export function createAnthropicMediaAnalyzer(
+  config: AnthropicExtractorConfig,
+): MediaAnalyzer {
+  const client = new Anthropic({ apiKey: config.apiKey });
+
+  return {
+    provider: PROVIDER,
+    model: config.model,
+
+    async analyze(context: MediaAnalysisContext): Promise<MediaAnalysisProposal> {
+      const known = context.knownPeople
+        .map((p) => (p.aliases.length ? `${p.preferredName} (also: ${p.aliases.join(', ')})` : p.preferredName))
+        .join('\n');
+
+      // Each image is labelled so per-image results map back deterministically
+      // rather than by position.
+      const content: Anthropic.ContentBlockParam[] = [
+        {
+          type: 'text',
+          text:
+            `Sender: ${context.sender.preferredName}\n` +
+            `Family's caption: ${context.batchCaption ?? '(none)'}\n` +
+            `People known to this group:\n${known || '(none)'}\n\n` +
+            `${context.media.length} image(s) follow, each preceded by its mediaId.`,
+        },
+      ];
+
+      for (const item of context.media) {
+        content.push({ type: 'text', text: `mediaId: ${item.mediaId}` });
+        content.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: item.mimeType as 'image/jpeg' | 'image/png' | 'image/webp',
+            data: Buffer.from(item.bytes).toString('base64'),
+          },
+        });
+      }
+
+      const response = await client.messages.create({
+        model: config.model,
+        max_tokens: 8000,
+        system: MEDIA_SYSTEM_PROMPT,
+        output_config: {
+          effort: config.effort,
+          format: { type: 'json_schema', schema: MEDIA_ANALYSIS_SCHEMA },
+        },
+        messages: [{ role: 'user', content }],
+      });
+
+      if (response.stop_reason === 'refusal') {
+        throw new Error('media analysis refused by provider safety classifier');
+      }
+
+      const text = response.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+
+      const parsed = JSON.parse(text) as Omit<MediaAnalysisProposal, 'schemaVersion'>;
+      return { ...parsed, schemaVersion: MEDIA_SCHEMA_VERSION };
     },
   };
 }

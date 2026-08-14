@@ -13,7 +13,11 @@ import {
   createAnthropicActivityMatcher,
   createAnthropicAgendaNarrator,
   createAnthropicExtractor,
+  createAnthropicMediaAnalyzer,
 } from './knowledge/providers/anthropic.js';
+import { createWhatsAppMediaFetcher, type MediaFetcher } from './media/retrieve.js';
+import { createSupabaseMediaStore, type MediaStore } from './media/store.js';
+import type { MediaAnalyzer } from './media/types.js';
 import type {
   ActivityMatcher,
   AgendaNarrator,
@@ -33,6 +37,12 @@ export interface ServerDeps {
   matcher?: ActivityMatcher | undefined;
   /** Absent means Alexa always speaks the deterministic sentence. */
   narrator?: AgendaNarrator | undefined;
+  /** Private object storage for group photos. */
+  store?: MediaStore | undefined;
+  /** Retrieves inbound media from Meta. */
+  fetcher?: MediaFetcher | undefined;
+  /** Vision analysis for stored photos. */
+  analyzer?: MediaAnalyzer | undefined;
 }
 
 /** Only built when Meta credentials are present; WhatsApp stays optional. */
@@ -56,6 +66,25 @@ function defaultExtractor(): KnowledgeExtractor | undefined {
   return createAnthropicExtractor({ apiKey, model, effort });
 }
 
+/** Only built when Supabase Storage is configured; photos are optional. */
+function defaultStore(): MediaStore | undefined {
+  const { url, serviceKey, bucket } = config.storage;
+  if (!url || !serviceKey) return undefined;
+  return createSupabaseMediaStore({ url, serviceKey, bucket });
+}
+
+function defaultFetcher(): MediaFetcher | undefined {
+  const { accessToken, phoneNumberId, graphApiVersion } = config.whatsapp;
+  if (!accessToken || !phoneNumberId) return undefined;
+  return createWhatsAppMediaFetcher({ accessToken, phoneNumberId, graphApiVersion });
+}
+
+function defaultAnalyzer(): MediaAnalyzer | undefined {
+  const { provider, apiKey, model, effort } = config.ai;
+  if (!apiKey || provider !== 'anthropic') return undefined;
+  return createAnthropicMediaAnalyzer({ apiKey, model, effort });
+}
+
 function defaultNarrator(): AgendaNarrator | undefined {
   const { provider, apiKey, model, effort } = config.ai;
   if (!apiKey || provider !== 'anthropic' || !config.ai.narrateAgenda) return undefined;
@@ -75,6 +104,9 @@ export function createServer(deps: ServerDeps = {}): Express {
   const extractor = 'extractor' in deps ? deps.extractor : defaultExtractor();
   const matcher = 'matcher' in deps ? deps.matcher : defaultMatcher();
   const narrator = 'narrator' in deps ? deps.narrator : defaultNarrator();
+  const store = 'store' in deps ? deps.store : defaultStore();
+  const fetcher = 'fetcher' in deps ? deps.fetcher : defaultFetcher();
+  const analyzer = 'analyzer' in deps ? deps.analyzer : defaultAnalyzer();
 
   app.disable('x-powered-by');
 
@@ -82,7 +114,13 @@ export function createServer(deps: ServerDeps = {}): Express {
     res.json({ status: 'ok', service: 'weekend-charlie' });
   });
 
-  app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({ db, messenger, extractor, matcher }));
+  app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({
+      db,
+      messenger,
+      extractor,
+      matcher,
+      media: { fetcher, store, analyzer },
+    }));
 
   app.post(
     '/alexa',
@@ -110,7 +148,7 @@ export function createServer(deps: ServerDeps = {}): Express {
       logger.info('alexa request', describeRequest(envelope));
 
       try {
-        const response = await handleAlexaRequest(envelope, { db, narrator });
+        const response = await handleAlexaRequest(envelope, { db, narrator, store });
         res.json(response);
       } catch (error: unknown) {
         // Answer in Charlie's voice instead of letting Alexa fall back to its

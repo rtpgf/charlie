@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "db:migrate": "tsx src/bin/db.ts migrate",
     "db:seed": "tsx src/bin/db.ts seed",
-    "knowledge:reprocess": "tsx src/bin/knowledge.ts"
+    "knowledge:reprocess": "tsx src/bin/knowledge.ts",
+    "media:reprocess": "tsx src/bin/media.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

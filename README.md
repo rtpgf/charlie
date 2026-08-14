@@ -11,6 +11,7 @@ See [CHARLIE.md](CHARLIE.md) for the product direction.
 | 2 | Charlie answers family questions from structured data in Postgres |
 | 3 | Family members message Charlie on WhatsApp; messages are stored verbatim |
 | 4 | Charlie learns events from those messages and Alexa answers from them |
+| 5 | Family photos are stored privately and shown on an Echo Show |
 
 ```text
 "Alexa, open weekend charlie."          -> Hi. I'm Charlie. Weekend Charlie is alive.
@@ -523,6 +524,147 @@ Events are written **before** the accepted marker. If the process dies between
 the two, a retry re-inserts nothing and completes the marker; the reverse order
 could strand a message marked learned with no events and no way to retry.
 
+## Photos
+
+```text
+WhatsApp media
+      ↓  group authorization — blocked/pending stop here
+Meta media retrieval          urls expire in ~5 minutes
+      ↓
+private Charlie storage       Supabase, private bucket
+      ↓
+structured visual analysis    src/media/types.ts
+      ↓  deterministic validation
+Group Gallery                 src/media/gallery.ts
+      ↓
+Alexa / Echo Show
+```
+
+### How WhatsApp actually delivers a multi-photo share
+
+**Each photo arrives as its own webhook message, with no grouping identifier of
+any kind**, and usually only the first carries the caption. There is nothing
+from the provider to group on, so grouping is a policy Charlie chooses — kept
+in [batching.ts](src/media/batching.ts), named, and documented rather than
+buried: consecutive images from the same sender in the same group, each within
+90 seconds of the last, are one share.
+
+Accepted limitations, all of which affect *presentation* rather than losing a
+photo or attributing it to the wrong person:
+
+- two separate shares sent moments apart merge into one;
+- a slow upload can strand the last photo as a share of its own;
+- provider delivery order is assumed to match send order, which Meta does not
+  guarantee.
+
+### Storage and privacy
+
+A **private** bucket. Charlie never generates a permanent or public URL; the
+Echo Show is handed a signed URL valid for 15 minutes, and signed URLs are
+never logged.
+
+Storage keys are built from opaque ids only:
+
+```text
+groups/<household-uuid>/media/<media-uuid>.jpg
+```
+
+No names, phone numbers, captions, or message text — the key space leaks
+nothing on its own, and deletion is a matter of following ids. A test asserts
+this directly.
+
+**Deletion readiness.** Every object traces to a media row, every media row to
+a group and a source message, every analysis to its media, and every person
+association to its evidence and source message. Deleting a photo means deleting
+its analysis, its evidence, and its object — no orphaned hierarchy stands in the
+way. Deletion is not yet exposed through Alexa or WhatsApp.
+
+### Media model
+
+| | |
+| --- | --- |
+| `media_batch` | One human act of sharing: sender, caption, when |
+| `group_media` | One photo: storage key, order in the share, status |
+| `media_analysis` | Per-image visual understanding, kept off the media row |
+| `media_person_evidence` | Who is in it, and **why Charlie thinks so** |
+
+**`shared_at` is not `captured_at`.** When the family shared a photo is a fact
+and is always recorded. When it was taken is evidence: preserved from EXIF when
+the file carries it, absent otherwise, and **never inferred** from how a scene
+or a person looks. `captured_at_source` and `captured_at_confidence` say which.
+
+### Person learning
+
+Ordinary family language is the enrolment mechanism. There is no tagging step
+and no Charlie-specific syntax — "Here's Natalie at the beach!" is the whole
+interaction.
+
+What a caption is evidence *of* depends on the photo:
+
+| Situation | Evidence | Usable? |
+| --- | --- | --- |
+| "Here's Natalie" over a photo of one person | `strong_context` | yes |
+| "Natalie's soccer team!" over eleven children | `weak_context` | **no** |
+| A model reporting it recognized Natalie | `visual_match` | yes, marked as AI |
+| "That's Hannah, not Natalie" | `human_correction` | outranks everything |
+
+The hierarchy is a product rule, not an implementation detail:
+
+```text
+human correction > explicit assertion > strong context > visual match > weak inference
+```
+
+`weak_context` is recorded but never accepted: Charlie knows Natalie was
+involved in the occasion without claiming to know which face is hers, so
+"show me pictures of Natalie" never answers with a team photo.
+
+**Closed world, always.** Names are matched against the group's own people and
+aliases. An unrecognized face produces nothing — no person row is ever created
+from a photo, and no identity is ever looked up outside the group.
+
+**Cross-photo visual re-identification is not implemented.** The evidence model,
+the passive learning, and the `visual_match` path all exist, but Charlie does
+not yet match a face in a new photo against previously learned reference images.
+Doing that credibly needs persistent visual references and a recognition step
+that the current provider does not offer as a reliable primitive, and faking it
+would put AI guesses on the same footing as what a family member actually said.
+Documented as the next deliberate capability rather than approximated.
+
+### Failure behaviour
+
+Each stage fails without costing the one before it:
+
+| Failure | Result |
+| --- | --- |
+| Meta download fails | `download_failed` recorded, nothing stored, no false success |
+| Content is not really an image | `rejected`, never sent to a vision model |
+| Storage fails | `storage_failed`, media never marked durable |
+| Vision analysis fails | Photo stays stored and in the gallery; caption evidence still learned |
+| Signed URL fails | Charlie speaks; **never** a public fallback URL |
+| No screen | A useful spoken answer, never "this device doesn't support pictures" |
+
+```bash
+npm run media:reprocess -- <media-id>
+```
+
+Retries retrieval for one photo. Meta keeps inbound media ids for about seven
+days, which is the real recovery window.
+
+### Echo Show
+
+`ShowLatestPicturesIntent`, plus `AMAZON.NextIntent`, `AMAZON.PreviousIntent`,
+`WhoSentThisIntent` and `WhenWasThisSharedIntent`. Screen support is detected
+from `Alexa.Presentation.APL` in `supportedInterfaces` — progressive
+enhancement, never a requirement.
+
+The APL document is deliberately plain: one full-bleed photo, one line of
+context over a scrim, and a `2 of 6` position marker. Large type, high
+contrast, no controls. The family photo is the hero.
+
+Navigation state lives in Alexa session attributes, not Postgres — which photo
+someone is looking at is not group knowledge, and a fresh "show me the latest
+pictures" rebuilds the gallery from Charlie's own data.
+
 ## Group messaging (WhatsApp)
 
 Group members message Charlie on WhatsApp. This milestone establishes the pipe
@@ -764,6 +906,9 @@ All settings live in `.env` (see `.env.example`).
 | `WHATSAPP_PHONE_NUMBER_ID` | _(unset)_  | Meta phone number ID used for sending                        |
 | `WHATSAPP_GRAPH_API_VERSION` | `v26.0`  | Graph API version for outbound calls                         |
 | `DEV_WHATSAPP_SENDER_ID` | _(unset)_    | WhatsApp sender mapped to Jenna by `db:seed`                 |
+| `SUPABASE_URL`          | _(unset)_     | Supabase project URL, for photo storage                      |
+| `SUPABASE_SERVICE_KEY`  | _(unset)_     | Service role key; server-side only                           |
+| `SUPABASE_MEDIA_BUCKET` | `group-media` | **Private** bucket for group photos                          |
 | `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
 | `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |
@@ -908,6 +1053,17 @@ Noted while building, deliberately not built:
   group can ask anything.
 - **Cheaper extraction.** Extraction is a small, well-specified task and an
   obvious candidate for a smaller model later. Deliberately not optimized now.
+- **Visual re-identification.** The evidence model supports it and the
+  `visual_match` path exists, but Charlie cannot yet recognize a face in a new
+  photo from previously learned references. This is the "and Charlie remembered
+  her" half of the photo experience.
+- **Conversational correction.** "That's Hannah, not Natalie" is representable
+  (`human_correction` outranks everything and `superseded_by` records the
+  override) but nothing yet routes such a message into it.
+- **Video and audio.** Only images are retrieved; other media types are
+  recognized and skipped.
+- **Export and deletion.** The schema and storage layout support both — every
+  object traces to a row, every row to a group — but neither is exposed.
 - **Admin alerting.** Failures are silent to the family by design, so an outage
   is invisible until someone checks the logs. Admins (`group_membership.role`)
   should be told — rate-limited to one alert per outage window, not one per

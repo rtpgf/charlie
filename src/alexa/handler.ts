@@ -8,6 +8,12 @@ import type { AgendaNarrator } from '../knowledge/types.js';
 import { findHouseholdTimezone } from '../knowledge/repository.js';
 import { instantToLocalDate } from '../knowledge/timezone.js';
 import { logger } from '../logger.js';
+import type { MediaStore } from '../media/store.js';
+import {
+  handlePhotoNavigation,
+  handlePhotoQuestion,
+  handleShowLatestPhotos,
+} from './photos.js';
 import {
   goodbye,
   helpMessage,
@@ -23,6 +29,8 @@ export interface HandlerDeps {
   db: Db;
   /** Optional fluency pass over multi-event answers. */
   narrator?: AgendaNarrator | undefined;
+  /** Signs short-lived URLs for Echo Show. Absent means voice-only. */
+  store?: MediaStore | undefined;
 }
 
 /** The slot carrying the person being asked about in WhoIsPersonIntent. */
@@ -59,6 +67,26 @@ export async function handleAlexaRequest(
 
         case 'AgendaForDateIntent':
           return handleAgendaForDate(envelope, deps);
+
+        case 'ShowLatestPicturesIntent': {
+          const householdId = await householdFor(envelope, deps);
+          if (!householdId) return speak(unrecognizedAccount());
+          return handleShowLatestPhotos(envelope, deps, householdId);
+        }
+
+        // Navigation and questions read the photo in view from session state,
+        // so they need no group lookup of their own.
+        case 'AMAZON.NextIntent':
+          return handlePhotoNavigation(envelope, deps, 'next');
+
+        case 'AMAZON.PreviousIntent':
+          return handlePhotoNavigation(envelope, deps, 'previous');
+
+        case 'WhoSentThisIntent':
+          return handlePhotoQuestion(envelope, deps, 'sender');
+
+        case 'WhenWasThisSharedIntent':
+          return handlePhotoQuestion(envelope, deps, 'when');
 
         case 'AMAZON.HelpIntent':
           return speak(helpMessage(), { keepSessionOpen: true });
