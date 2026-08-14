@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 
 import { describeRequest, handleAlexaRequest } from './alexa/handler.js';
+import type { MediaLinkConfig } from './alexa/photos.js';
 import { speak } from './alexa/responses.js';
 import { verifyAlexaRequest, verifySkillId } from './alexa/verify.js';
 import { config } from './config.js';
@@ -16,6 +17,7 @@ import {
   createAnthropicMediaAnalyzer,
 } from './knowledge/providers/anthropic.js';
 import { createWhatsAppMediaFetcher, type MediaFetcher } from './media/retrieve.js';
+import { createMediaRouter } from './media/router.js';
 import { createSupabaseMediaStore, type MediaStore } from './media/store.js';
 import type { MediaAnalyzer } from './media/types.js';
 import type {
@@ -43,6 +45,8 @@ export interface ServerDeps {
   fetcher?: MediaFetcher | undefined;
   /** Vision analysis for stored photos. */
   analyzer?: MediaAnalyzer | undefined;
+  /** Serves photos from Charlie's own domain. Absent falls back to storage. */
+  link?: MediaLinkConfig | undefined;
 }
 
 /** Only built when Meta credentials are present; WhatsApp stays optional. */
@@ -97,6 +101,17 @@ function defaultMatcher(): ActivityMatcher | undefined {
   return createAnthropicActivityMatcher({ apiKey, model, effort });
 }
 
+/**
+ * Photos are served from Charlie's own domain only when both the origin and a
+ * signing secret are set. Without them, Alexa falls back to storage's own
+ * signed URL -- which works everywhere except an Echo Show.
+ */
+function defaultLink(): MediaLinkConfig | undefined {
+  const { publicBaseUrl, linkSecret } = config.media;
+  if (!publicBaseUrl || !linkSecret) return undefined;
+  return { baseUrl: publicBaseUrl, secret: linkSecret };
+}
+
 export function createServer(deps: ServerDeps = {}): Express {
   const app = express();
   const db: Db = deps.db ?? { query: (text, params) => getPool().query(text, params) };
@@ -107,12 +122,15 @@ export function createServer(deps: ServerDeps = {}): Express {
   const store = 'store' in deps ? deps.store : defaultStore();
   const fetcher = 'fetcher' in deps ? deps.fetcher : defaultFetcher();
   const analyzer = 'analyzer' in deps ? deps.analyzer : defaultAnalyzer();
+  const link = 'link' in deps ? deps.link : defaultLink();
 
   app.disable('x-powered-by');
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'weekend-charlie' });
   });
+
+  app.use('/media', createMediaRouter({ db, store, secret: config.media.linkSecret }));
 
   app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({
       db,
@@ -148,7 +166,7 @@ export function createServer(deps: ServerDeps = {}): Express {
       logger.info('alexa request', describeRequest(envelope));
 
       try {
-        const response = await handleAlexaRequest(envelope, { db, narrator, store });
+        const response = await handleAlexaRequest(envelope, { db, narrator, store, link });
         res.json(response);
       } catch (error: unknown) {
         // Answer in Charlie's voice instead of letting Alexa fall back to its

@@ -24,6 +24,18 @@ export const config = {
     /** Postgres connection string. Supabase, or any Postgres. */
     url: process.env.DATABASE_URL || undefined,
   },
+  media: {
+    /**
+     * Charlie's own HTTPS origin, e.g. https://charlie.servehttp.com
+     *
+     * Photos are served from here rather than straight from object storage:
+     * Echo Shows load a short path on the domain they already reach Charlie
+     * through, and will not load a 550-character storage URL.
+     */
+    publicBaseUrl: process.env.PUBLIC_BASE_URL?.replace(/\/$/, '') || undefined,
+    /** Signs photo links. Any long random string; rotating it revokes them all. */
+    linkSecret: process.env.MEDIA_LINK_SECRET || undefined,
+  },
   dev: {
     /**
      * Alexa userId to map to the seeded household when running the seed.

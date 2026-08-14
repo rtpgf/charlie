@@ -679,6 +679,29 @@ on the device, in the logs, or in the skill response:
 - **`APL_DOCUMENT_VERSION` stays low** (`1.6`). Every component used has existed
   since early APL, so demanding a newer runtime only excludes older devices.
 
+#### Photos are served from Charlie's own domain
+
+An Echo Show renders the caption and silently drops the photo when the `Image`
+source is a Supabase signed URL — 550 characters of JWT in a query string, on a
+host the device has never talked to. The same document with a short URL renders
+immediately, so Charlie hands out its own link and streams the bytes itself:
+
+```
+GET /media/<media id>.<expiry>.<signature>
+```
+
+About 60 characters, signed with `MEDIA_LINK_SECRET`, expiring in 15 minutes.
+The token carries no household, person, caption or file name, and the route is
+deliberately narrow — one token in, one image out, no listing and no parameters.
+A forged token, an expired one, and a photo that does not exist all return the
+same bare `404`, so nothing leaks about which photos exist.
+
+Set `PUBLIC_BASE_URL` and `MEDIA_LINK_SECRET` to enable it. With either unset,
+Alexa falls back to storage's own signed URL — fine everywhere except a device.
+
+The bucket stays private throughout. Charlie authenticates to storage with the
+service key, which never leaves the server.
+
 When the screen is blank, check the photo URL before suspecting the document:
 
 ```bash
@@ -903,6 +926,7 @@ scope — which is exactly why the expiry date is worth writing down.
 | `POST` | `/alexa`              | Alexa Custom Skill request envelope            |
 | `GET`  | `/webhooks/whatsapp`  | Meta webhook subscription challenge            |
 | `POST` | `/webhooks/whatsapp`  | Meta webhook message delivery                  |
+| `GET`  | `/media/:token`       | One group photo, for a signed, unexpired token |
 
 `/alexa` handles `LaunchRequest`, answers family questions via
 `WhoIsPersonIntent`, supports Help/Stop/Cancel, acknowledges
@@ -938,6 +962,8 @@ All settings live in `.env` (see `.env.example`).
 | `SUPABASE_URL`          | _(unset)_     | Supabase project URL, for photo storage                      |
 | `SUPABASE_SERVICE_KEY`  | _(unset)_     | Service role key; server-side only                           |
 | `SUPABASE_MEDIA_BUCKET` | `group-media` | **Private** bucket for group photos                          |
+| `PUBLIC_BASE_URL`       | _(unset)_     | Charlie's own HTTPS origin; photos are served from here       |
+| `MEDIA_LINK_SECRET`     | _(unset)_     | Signs photo links; rotating it revokes every outstanding one  |
 | `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
 | `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |

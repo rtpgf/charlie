@@ -10,6 +10,8 @@ import { logger } from '../logger.js';
  */
 export interface MediaStore {
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
+  /** Reads a photo back, so Charlie can serve it from its own domain. */
+  get(key: string): Promise<{ bytes: Uint8Array; contentType: string }>;
   /** A time-limited HTTPS URL. Never permanent, never public, never logged. */
   getSignedUrl(key: string, expiresInSeconds: number): Promise<string>;
   delete(key: string): Promise<void>;
@@ -75,6 +77,17 @@ export function createSupabaseMediaStore(config: SupabaseStoreConfig): MediaStor
       if (!response.ok) {
         throw new Error(`storage put failed with status ${response.status}`);
       }
+    },
+
+    async get(key) {
+      const response = await fetch(`${base}/object/${config.bucket}/${key}`, { headers });
+      if (!response.ok) {
+        throw new Error(`storage get failed with status ${response.status}`);
+      }
+      return {
+        bytes: new Uint8Array(await response.arrayBuffer()),
+        contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+      };
     },
 
     async getSignedUrl(key, expiresInSeconds) {

@@ -42,6 +42,11 @@ export function recordingStore(): RecordingStore {
     put: async (key, bytes, contentType) => {
       objects.set(key, { bytes, contentType });
     },
+    get: async (key) => {
+      const object = objects.get(key);
+      if (!object) throw new Error(`storage get failed with status 404`);
+      return object;
+    },
     getSignedUrl: async (key, expiresIn) => {
       signed.push({ key, expiresIn });
       return `https://storage.example/signed/${encodeURIComponent(key)}?token=abc&exp=${expiresIn}`;
@@ -56,6 +61,7 @@ export function recordingStore(): RecordingStore {
 export function failingStore(): MediaStore {
   return {
     put: () => Promise.reject(new Error('storage put failed with status 500')),
+    get: () => Promise.reject(new Error('storage get failed with status 500')),
     getSignedUrl: () => Promise.reject(new Error('signed url failed with status 500')),
     delete: () => Promise.resolve(),
   };

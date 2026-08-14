@@ -21,6 +21,10 @@ export default defineConfig({
       WHATSAPP_ACCESS_TOKEN: '',
       WHATSAPP_PHONE_NUMBER_ID: '',
       DEV_WHATSAPP_SENDER_ID: '',
+      // Photo links: pinned empty so a developer's real origin and secret
+      // cannot change which URL the APL document is built with.
+      PUBLIC_BASE_URL: '',
+      MEDIA_LINK_SECRET: '',
       // Normal tests never call a provider: extractors are injected as fakes.
       ANTHROPIC_API_KEY: '',
     },

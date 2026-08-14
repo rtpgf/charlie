@@ -91,6 +91,34 @@ describe('showing the latest pictures', () => {
     expect(spoken(response)).toContain('Natalie at the beach');
   });
 
+  it('serves the photo from Charlie\'s own domain when one is configured', async () => {
+    await sharePhotos(1);
+    const envelope = intentRequest('ShowLatestPicturesIntent') as Record<string, unknown>;
+    (envelope['context'] as { System: Record<string, unknown> }).System['device'] = {
+      deviceId: 'test-device',
+      supportedInterfaces: { 'Alexa.Presentation.APL': {} },
+    };
+
+    const response = await request(
+      createServer({
+        db,
+        store,
+        extractor: undefined,
+        link: { baseUrl: 'https://charlie.example', secret: 'a-long-test-secret' },
+      }),
+    )
+      .post('/alexa')
+      .send(envelope)
+      .set('Content-Type', 'application/json');
+
+    const directive = directives(response)[0] as Record<string, unknown>;
+    const source = JSON.stringify(directive['document']);
+    // An Echo Show will not load a 550-character storage URL, so the document
+    // points at Charlie, on the origin the device already reaches it through.
+    expect(source).toContain('https://charlie.example/media/');
+    expect(store.signed).toHaveLength(0);
+  });
+
   it('shows the photo through a time-limited URL, never a public one', async () => {
     await sharePhotos(1);
 

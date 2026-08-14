@@ -9,6 +9,7 @@ import { findHouseholdTimezone } from '../knowledge/repository.js';
 import { instantToLocalDate } from '../knowledge/timezone.js';
 import { logger } from '../logger.js';
 import type { MediaStore } from '../media/store.js';
+import type { MediaLinkConfig } from './photos.js';
 import {
   handlePhotoNavigation,
   handlePhotoQuestion,
@@ -31,6 +32,8 @@ export interface HandlerDeps {
   narrator?: AgendaNarrator | undefined;
   /** Signs short-lived URLs for Echo Show. Absent means voice-only. */
   store?: MediaStore | undefined;
+  /** Serves photos from Charlie's own domain. Absent falls back to storage. */
+  link?: MediaLinkConfig | undefined;
 }
 
 /** The slot carrying the person being asked about in WhoIsPersonIntent. */

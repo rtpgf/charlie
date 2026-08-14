@@ -4,6 +4,7 @@ import type { Db } from '../db/index.js';
 import { findHouseholdTimezone } from '../knowledge/repository.js';
 import { logger } from '../logger.js';
 import { getBatch, getLatestBatch, type GalleryBatch } from '../media/gallery.js';
+import { signMediaToken } from '../media/link.js';
 import {
   cannotShowRightNow,
   describeBatch,
@@ -31,9 +32,17 @@ import { speak } from './responses.js';
 /** Long enough to look through a batch, short enough to be worth little if leaked. */
 export const SIGNED_URL_SECONDS = 15 * 60;
 
+/** Where photos are served from, when Charlie serves them itself. */
+export interface MediaLinkConfig {
+  /** Charlie's own HTTPS origin, without a trailing slash. */
+  baseUrl: string;
+  secret: string;
+}
+
 export interface PhotoDeps {
   db: Db;
   store?: MediaStore | undefined;
+  link?: MediaLinkConfig | undefined;
 }
 
 interface PhotoSession {
@@ -51,6 +60,30 @@ function readSession(envelope: RequestEnvelope): PhotoSession | null {
 
 function writeSession(session: PhotoSession): Record<string, unknown> {
   return { photoBatchId: session.batchId, photoIndex: session.index };
+}
+
+/**
+ * The URL the device will fetch the photo from.
+ *
+ * Charlie's own domain when it is configured, because an Echo Show loads a
+ * short path on the host it already talks to and silently refuses a long
+ * storage URL. Storage's own signed URL otherwise, which still works
+ * everywhere else and keeps photos working before that configuration exists.
+ */
+async function photoUrl(
+  mediaId: string,
+  storageKey: string,
+  deps: PhotoDeps,
+  store: MediaStore,
+): Promise<string> {
+  if (!deps.link) return store.getSignedUrl(storageKey, SIGNED_URL_SECONDS);
+
+  const token = signMediaToken({
+    mediaId,
+    expiresAt: new Date(Date.now() + SIGNED_URL_SECONDS * 1000),
+    secret: deps.link.secret,
+  });
+  return `${deps.link.baseUrl}/media/${token}`;
 }
 
 /** Builds the response for one photo of a batch, with or without a screen. */
@@ -73,7 +106,7 @@ async function showSlide(
 
   let imageUrl: string;
   try {
-    imageUrl = await deps.store.getSignedUrl(item.storageKey, SIGNED_URL_SECONDS);
+    imageUrl = await photoUrl(item.mediaId, item.storageKey, deps, deps.store);
   } catch (error: unknown) {
     // Never fall back to a public URL. Speak, and skip the picture.
     logger.error('signed url generation failed', {
