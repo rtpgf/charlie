@@ -179,9 +179,20 @@ export async function findMediaById(db: Db, id: string): Promise<MediaRow | null
   return result.rows[0] ? toMediaRow(result.rows[0]) : null;
 }
 
-export async function findBatchCaption(db: Db, batchId: string): Promise<string | null> {
-  const result = await db.query('SELECT caption FROM media_batch WHERE id = $1', [batchId]);
-  return (result.rows[0]?.['caption'] as string | null) ?? null;
+export async function findBatch(
+  db: Db,
+  batchId: string,
+): Promise<{ caption: string | null; senderPersonId: string } | null> {
+  const result = await db.query(
+    'SELECT caption, sender_person_id FROM media_batch WHERE id = $1',
+    [batchId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    caption: (row['caption'] as string | null) ?? null,
+    senderPersonId: row['sender_person_id'] as string,
+  };
 }
 
 export async function hasAcceptedAnalysis(db: Db, mediaId: string): Promise<boolean> {

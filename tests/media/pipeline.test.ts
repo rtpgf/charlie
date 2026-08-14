@@ -275,6 +275,50 @@ describe('dates', () => {
   });
 });
 
+describe('reprocessing', () => {
+  it('completes the recovery, not just the download', async () => {
+    const { db, householdId } = await seeded();
+    const { reprocessMedia } = await import('../../src/media/service.js');
+
+    // First attempt: storage unavailable, so the photo is never made durable.
+    await ingestInboundMessage(
+      inbound({ mediaId: 'm1', messageId: 'wamid.1', caption: "Here's Natalie at the beach!" }),
+      { db, media: deps({ store: failingStore() }) },
+    );
+    const failed = (await mediaRows(db))[0]!;
+    expect(failed['status']).toBe('storage_failed');
+
+    const media = deps();
+    const outcome = await reprocessMedia(db, failed['id'] as string, { db, ...media });
+
+    expect(outcome).toBe('stored');
+    // A photo recovered without analysis would sit in the gallery as an
+    // unknown image, so reprocessing has to finish the job.
+    const analysis = await db.query('SELECT status, description FROM media_analysis');
+    expect(analysis.rows[0]!['status']).toBe('accepted');
+    expect(analysis.rows[0]!['description']).not.toBeNull();
+
+    const evidence = await db.query('SELECT evidence_type FROM media_person_evidence');
+    expect(evidence.rows[0]!['evidence_type']).toBe('strong_context');
+    expect(householdId).toBeTruthy();
+  });
+
+  it('does not redo work that already succeeded', async () => {
+    const { db } = await seeded();
+    const { reprocessMedia } = await import('../../src/media/service.js');
+    const media = deps();
+
+    await ingestInboundMessage(inbound({ mediaId: 'm1', messageId: 'wamid.1' }), { db, media });
+    const stored = (await mediaRows(db))[0]!;
+
+    const outcome = await reprocessMedia(db, stored['id'] as string, { db, ...media });
+
+    expect(outcome).toBe('already_stored');
+    const analyses = await db.query('SELECT count(*)::int AS count FROM media_analysis');
+    expect(analyses.rows[0]!['count']).toBe(1);
+  });
+});
+
 describe('analysis failure', () => {
   it('keeps the photo when vision analysis fails', async () => {
     const { db, householdId } = await seeded();

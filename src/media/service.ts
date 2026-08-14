@@ -6,6 +6,7 @@ import { OutboundMessageError } from '../messaging/types.js';
 import { captionEvidenceForImage, mergeEvidence, visualEvidenceForImage } from './evidence.js';
 import { readJpegCaptureTime } from './exif.js';
 import {
+  findBatch,
   findOrCreateBatch,
   findMediaById,
   hasAcceptedAnalysis,
@@ -319,7 +320,14 @@ async function recordCaptionEvidence(
   }
 }
 
-/** Retry a single media item that failed retrieval. Used by the CLI. */
+/**
+ * Retry one media item. Used by the CLI.
+ *
+ * Recovery has to be complete: an item that was only ever stored has no
+ * description and no caption evidence, so a photo recovered without analysis
+ * would sit in the gallery as an unknown image. Both stages run, and a photo
+ * already stored is analyzed without being downloaded again.
+ */
 export async function reprocessMedia(
   db: Db,
   mediaId: string,
@@ -331,6 +339,46 @@ export async function reprocessMedia(
     return 'already_stored';
   }
 
-  const outcome = await retrieveAndStore(media, { ...deps, db });
-  return outcome ? 'stored' : 'failed';
+  let bytes: Uint8Array | undefined;
+  let mimeType: string | undefined;
+
+  if (media.status === 'stored' && media.storageKey) {
+    // Already durable: fetch the bytes again only to analyze them. Meta keeps
+    // inbound media ids for about seven days, which is the real window.
+    try {
+      const download = await deps.fetcher?.download(media.providerMediaId);
+      if (download) {
+        bytes = download.bytes;
+        mimeType = media.mimeType ?? download.mimeType;
+      }
+    } catch (error: unknown) {
+      logger.warn('could not re-fetch media for analysis', {
+        mediaId,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+  } else {
+    const outcome = await retrieveAndStore(media, { ...deps, db });
+    if (!outcome) return 'failed';
+    bytes = outcome.bytes;
+    mimeType = outcome.mimeType;
+  }
+
+  if (!bytes || !mimeType || !media.mediaBatchId) return 'stored';
+
+  const batch = await findBatch(db, media.mediaBatchId);
+  if (!batch) return 'stored';
+
+  await analyzeStoredMedia(
+    [{ row: media, bytes, mimeType }],
+    {
+      batchId: media.mediaBatchId,
+      caption: batch.caption,
+      groupMessageId: media.groupMessageId,
+      sender: { householdId: media.householdId, personId: batch.senderPersonId },
+    },
+    { ...deps, db },
+  );
+
+  return 'stored';
 }
