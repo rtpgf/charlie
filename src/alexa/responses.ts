@@ -45,10 +45,17 @@ export function speak(text: string, options: SpeakOptions = {}): ResponseEnvelop
   return {
     version: '1.0',
     response: {
-      outputSpeech: {
-        type: 'SSML',
-        ssml: `<speak>${inCharliesVoice(escapeSsml(text))}</speak>`,
-      },
+      // No words, no speech. A response may carry only directives -- moving the
+      // photo stack is the whole answer, and an empty <speak> would be a pause
+      // where nothing was meant to be said.
+      ...(text
+        ? {
+            outputSpeech: {
+              type: 'SSML' as const,
+              ssml: `<speak>${inCharliesVoice(escapeSsml(text))}</speak>`,
+            },
+          }
+        : {}),
       ...(options.cardTitle
         ? { card: { type: 'Simple' as const, title: options.cardTitle, content: text } }
         : {}),

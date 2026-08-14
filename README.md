@@ -665,10 +665,28 @@ support until you do:
 > Alexa Developer Console → **Build** → **Interfaces** → toggle **Alexa
 > Presentation Language** on → **Save Interfaces** → rebuild the model.
 
-The photo is matted like a print — the whole photograph, uncropped, on a white
-matte against Charlie's background (`#1C3B47`, one constant in
-[apl.ts](src/alexa/apl.ts)), with the caption and a `2 of 6` marker centred
-below it. Large type, high contrast, no controls. The family photo is the hero.
+A share is one **stack of photographs**. The top one is matted like a print —
+the whole photograph, uncropped, on white — with the edges of the others showing
+behind it, tilted, against Charlie's background (`#1C3B47`, one constant in
+[apl.ts](src/alexa/apl.ts)). **Swipe it** and the top photo goes to the bottom of
+the pile. Large type, high contrast, no controls. The family photo is the hero.
+
+Touch matters more than it looks: someone who will not issue voice commands to a
+machine will happily push a photo sideways.
+
+Three things follow from using a `Pager`:
+
+- **Every photo is sent up front**, because a Pager holds all its pages. A six
+  photo share is ~1.4 MB out through the server's uplink at once.
+- **"Next" moves the device, it does not re-render.** The response is a
+  `SetPage` command with `position: "relative"`, so it moves relative to the
+  page *the device* is showing. Swiping and asking stay in sync, and Charlie
+  never tracks an index for a screen.
+- **The position marker lives inside each page**, so a swipe updates it with no
+  round trip. Nothing on the server knows which photo is showing.
+
+The stack wraps. A screenless Echo still says `"That's the last one."` — looping
+silently with no marker to read would only be confusing.
 
 Cropping is a setting, because filling the screen means cutting a face out of
 frame:

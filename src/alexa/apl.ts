@@ -3,20 +3,25 @@ import type { RequestEnvelope } from 'ask-sdk-model';
 /**
  * Echo Show presentation.
  *
- * Deliberately one photo, one line of context, and a position marker. The
- * family photo is the hero; anything else competes with it. Large type and
- * high contrast because the person looking at it may be the reason Charlie
- * exists.
+ * A share is one stack of photographs: the top one is matted like a print, the
+ * edges of the ones behind it show, and a swipe moves through them. Deliberately
+ * one photo, one line of context, and a position marker -- the family photo is
+ * the hero; anything else competes with it. Large type and high contrast
+ * because the person looking at it may be the reason Charlie exists.
  */
 
 export const APL_INTERFACE = 'Alexa.Presentation.APL';
 /**
- * Pinned low on purpose. Everything here -- Container, Frame, Image, Text,
- * absolute positioning -- has existed since early APL, so asking for a recent
- * runtime buys nothing and excludes older Echo Shows, which fail by rendering
- * the container and dropping its contents. A blank screen, with no error.
+ * Pinned low on purpose. Everything here -- Container, Frame, Pager, Image,
+ * Text -- has existed since early APL, so asking for a recent runtime buys
+ * nothing and excludes older Echo Shows, which fail by rendering the container
+ * and dropping its contents. A blank screen, with no error.
  */
 export const APL_DOCUMENT_VERSION = '1.6';
+
+/** The document is addressed by this when a later turn moves the stack. */
+export const PHOTO_TOKEN = 'charlie-photo';
+export const PAGER_ID = 'photoStack';
 
 /**
  * Charlie's colours, in one place.
@@ -29,6 +34,8 @@ const BRAND_BACKGROUND = '#1C3B47';
 /** The matte of a print. White because that is what a photograph sits in. */
 const MATTE = '#FFFFFF';
 const CAPTION_TEXT = '#F4F1EA';
+/** On the matte, so it is dark. Reads as a note on the border of a print. */
+const MATTE_TEXT = '#6B7B82';
 const POSITION_TEXT = '#A9BCC4';
 
 /**
@@ -40,7 +47,13 @@ const POSITION_TEXT = '#A9BCC4';
  */
 const EDGE_PADDING = '32dp';
 /** The white margin around the photo, as on a print. */
-const MATTE_PADDING = '18dp';
+const MATTE_PADDING = '16dp';
+
+/** The stack sits in a fixed area, so the caption never moves between photos. */
+const CARD_WIDTH = '70vw';
+const CARD_HEIGHT = '54vh';
+const STACK_WIDTH = '76vw';
+const STACK_HEIGHT = '58vh';
 
 /**
  * How a photo meets the screen.
@@ -64,51 +77,93 @@ export function supportsApl(envelope: RequestEnvelope): boolean {
 export interface PhotoSlide {
   /** Short-lived signed URL. HTTPS only -- devices reject http. */
   imageUrl: string;
-  /** "Jenna sent these from the beach" -- the human's words where possible. */
-  caption: string;
   /** "2 of 6", omitted for a single photo. */
   position?: string | undefined;
-  /** Defaults to showing the whole photograph. */
+}
+
+export interface PhotoStack {
+  slides: PhotoSlide[];
+  /** "Jenna: Natalie at the beach" -- the human's words where possible. */
+  caption: string;
   fit?: PhotoFit | undefined;
 }
 
-function captionLines(slide: PhotoSlide, options: { centred: boolean }): unknown[] {
-  return [
-    {
-      type: 'Text',
-      text: slide.caption,
-      fontSize: '38dp',
-      fontWeight: '500',
-      color: CAPTION_TEXT,
-      maxLines: 2,
-      ...(options.centred ? { textAlign: 'center' } : {}),
-    },
-    // Omitted in JavaScript rather than with an APL `when`: one less expression
-    // to evaluate on the device.
-    ...(slide.position
-      ? [
+/**
+ * One page: the photograph, matted, with its position written on the border.
+ *
+ * The position lives inside the page rather than under the stack so that a
+ * swipe updates it. Nothing else has to know which photo is showing -- not the
+ * server, and not a session attribute.
+ */
+function mattedPage(slide: PhotoSlide): unknown {
+  return {
+    type: 'Frame',
+    width: '100%',
+    height: '100%',
+    backgroundColor: MATTE,
+    borderRadius: '4dp',
+    paddingLeft: MATTE_PADDING,
+    paddingRight: MATTE_PADDING,
+    paddingTop: MATTE_PADDING,
+    paddingBottom: MATTE_PADDING,
+    items: [
+      {
+        type: 'Container',
+        width: '100%',
+        height: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        items: [
           {
-            type: 'Text',
-            text: slide.position,
-            fontSize: '26dp',
-            color: POSITION_TEXT,
-            paddingTop: '8dp',
-            ...(options.centred ? { textAlign: 'center' } : {}),
+            type: 'Image',
+            source: slide.imageUrl,
+            width: '100%',
+            height: slide.position ? '86%' : '100%',
+            // Fits the whole photograph inside the matte without cropping it.
+            scale: 'best-fit',
+            align: 'center',
           },
-        ]
-      : []),
-  ];
+          ...(slide.position
+            ? [
+                {
+                  type: 'Text',
+                  text: slide.position,
+                  fontSize: '22dp',
+                  color: MATTE_TEXT,
+                  textAlign: 'center',
+                  paddingTop: '8dp',
+                },
+              ]
+            : []),
+        ],
+      },
+    ],
+  };
 }
 
-/**
- * The whole photograph, matted like a print against Charlie's background.
- *
- * The photo box is a fixed area and the image is fitted inside it, so a
- * portrait and a landscape photo both sit in a frame of the same size. That is
- * how a mounted print behaves, and it keeps the caption from moving between
- * photos in the same share.
- */
-function framed(slide: PhotoSlide): unknown {
+/** An empty card, offset and tilted, so the stack reads as a pile. */
+function backCard(options: { left: string; top: string; rotate: number }): unknown {
+  return {
+    type: 'Frame',
+    position: 'absolute',
+    left: options.left,
+    top: options.top,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    backgroundColor: MATTE,
+    borderRadius: '4dp',
+    // Ignored by runtimes that predate transforms, which costs nothing: the
+    // card still reads as a card behind the photo, just square to it.
+    transform: [{ rotate: options.rotate }],
+    shadowColor: '#00000055',
+    shadowRadius: '12dp',
+    shadowVerticalOffset: '4dp',
+  };
+}
+
+/** The whole photograph, matted like a print, on Charlie's background. */
+function stacked(stack: PhotoStack): unknown {
+  const many = stack.slides.length > 1;
   return {
     type: 'Container',
     width: '100vw',
@@ -120,27 +175,31 @@ function framed(slide: PhotoSlide): unknown {
     paddingBottom: EDGE_PADDING,
     items: [
       {
-        type: 'Frame',
-        backgroundColor: MATTE,
-        borderRadius: '4dp',
-        paddingLeft: MATTE_PADDING,
-        paddingRight: MATTE_PADDING,
-        paddingTop: MATTE_PADDING,
-        paddingBottom: MATTE_PADDING,
-        // Lifts the print off the background. Ignored by runtimes that predate
-        // shadows, which costs nothing.
-        shadowColor: '#00000066',
-        shadowRadius: '18dp',
-        shadowVerticalOffset: '6dp',
+        type: 'Container',
+        width: STACK_WIDTH,
+        height: STACK_HEIGHT,
+        alignItems: 'center',
+        justifyContent: 'center',
         items: [
+          // Only hinted at when there is actually more than one photograph.
+          ...(many
+            ? [
+                backCard({ left: '0dp', top: '10dp', rotate: -3 }),
+                backCard({ left: '18dp', top: '5dp', rotate: 2 }),
+              ]
+            : []),
           {
-            type: 'Image',
-            source: slide.imageUrl,
-            width: '72vw',
-            height: '52vh',
-            // Fits the whole photograph inside the frame without cropping it.
-            scale: 'best-fit',
-            align: 'center',
+            type: 'Pager',
+            id: PAGER_ID,
+            position: 'absolute',
+            left: '9dp',
+            top: '0dp',
+            width: CARD_WIDTH,
+            height: CARD_HEIGHT,
+            initialPage: 0,
+            // The top photograph goes to the bottom of the stack.
+            navigation: many ? 'wrap' : 'none',
+            items: stack.slides.map(mattedPage),
           },
         ],
       },
@@ -149,20 +208,30 @@ function framed(slide: PhotoSlide): unknown {
         width: '100vw',
         paddingLeft: EDGE_PADDING,
         paddingRight: EDGE_PADDING,
-        paddingTop: '20dp',
+        paddingTop: '18dp',
         alignItems: 'center',
-        items: captionLines(slide, { centred: true }),
+        items: [
+          {
+            type: 'Text',
+            text: stack.caption,
+            fontSize: '34dp',
+            fontWeight: '500',
+            color: CAPTION_TEXT,
+            textAlign: 'center',
+            maxLines: 2,
+          },
+        ],
       },
     ],
   };
 }
 
 /** Edge to edge, cropping whatever does not fit. Caption over a scrim. */
-function fullBleed(slide: PhotoSlide): unknown {
+function fullBleedPage(slide: PhotoSlide, caption: string): unknown {
   return {
     type: 'Container',
-    width: '100vw',
-    height: '100vh',
+    width: '100%',
+    height: '100%',
     backgroundColor: BRAND_BACKGROUND,
     items: [
       {
@@ -185,36 +254,90 @@ function fullBleed(slide: PhotoSlide): unknown {
         paddingBottom: EDGE_PADDING,
         paddingTop: EDGE_PADDING,
         backgroundColor: 'rgba(0,0,0,0.62)',
-        items: captionLines(slide, { centred: false }),
+        items: [
+          {
+            type: 'Text',
+            text: caption,
+            fontSize: '38dp',
+            fontWeight: '500',
+            color: CAPTION_TEXT,
+            maxLines: 2,
+          },
+          ...(slide.position
+            ? [
+                {
+                  type: 'Text',
+                  text: slide.position,
+                  fontSize: '26dp',
+                  color: POSITION_TEXT,
+                  paddingTop: '8dp',
+                },
+              ]
+            : []),
+        ],
       },
     ],
   };
 }
 
+function filled(stack: PhotoStack): unknown {
+  return {
+    type: 'Pager',
+    id: PAGER_ID,
+    width: '100vw',
+    height: '100vh',
+    initialPage: 0,
+    navigation: stack.slides.length > 1 ? 'wrap' : 'none',
+    items: stack.slides.map((slide) => fullBleedPage(slide, stack.caption)),
+  };
+}
+
 /**
- * The document, with this slide's values written straight into it.
+ * The document, with the share's values written straight into it.
  *
  * No `datasources`, and no `${...}` bindings. Charlie builds a document per
  * request, so the template indirection bought nothing and could only fail --
  * a binding that does not resolve renders as empty rather than as an error,
  * which on a device is indistinguishable from a photo that would not load.
  */
-export function photoDocument(slide: PhotoSlide): Record<string, unknown> {
-  const fit = slide.fit ?? DEFAULT_PHOTO_FIT;
+export function photoDocument(stack: PhotoStack): Record<string, unknown> {
+  const fit = stack.fit ?? DEFAULT_PHOTO_FIT;
   return {
     type: 'APL',
     version: APL_DOCUMENT_VERSION,
     mainTemplate: {
-      items: [fit === 'cover' ? fullBleed(slide) : framed(slide)],
+      items: [fit === 'cover' ? filled(stack) : stacked(stack)],
     },
   };
 }
 
-/** The directive Alexa needs to render a slide. */
-export function renderPhotoDirective(slide: PhotoSlide): Record<string, unknown> {
+/** The directive Alexa needs to render a share. */
+export function renderPhotoDirective(stack: PhotoStack): Record<string, unknown> {
   return {
     type: 'Alexa.Presentation.APL.RenderDocument',
-    token: 'charlie-photo',
-    document: photoDocument(slide),
+    token: PHOTO_TOKEN,
+    document: photoDocument(stack),
+  };
+}
+
+/**
+ * Moves the stack without re-rendering it.
+ *
+ * Relative to the page the *device* is showing, not to anything the server
+ * remembers -- so a photo reached by swiping and a photo reached by asking are
+ * the same photo, and "next" after three swipes does what it says.
+ */
+export function movePhotoDirective(direction: 'next' | 'previous'): Record<string, unknown> {
+  return {
+    type: 'Alexa.Presentation.APL.ExecuteCommands',
+    token: PHOTO_TOKEN,
+    commands: [
+      {
+        type: 'SetPage',
+        componentId: PAGER_ID,
+        position: 'relative',
+        value: direction === 'next' ? 1 : -1,
+      },
+    ],
   };
 }

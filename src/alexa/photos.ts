@@ -17,7 +17,13 @@ import {
   startOfBatch,
 } from '../media/present.js';
 import type { MediaStore } from '../media/store.js';
-import { renderPhotoDirective, supportsApl, type PhotoFit } from './apl.js';
+import {
+  movePhotoDirective,
+  renderPhotoDirective,
+  supportsApl,
+  type PhotoFit,
+  type PhotoSlide,
+} from './apl.js';
 import { speak } from './responses.js';
 
 /**
@@ -92,31 +98,40 @@ async function photoUrl(
   return `${deps.link.baseUrl}/media/${token}`;
 }
 
-/** Builds the response for one photo of a batch, with or without a screen. */
-async function showSlide(
+/**
+ * Puts the whole share on screen as one stack, or says it when there is none.
+ *
+ * Every photo is rendered up front, because a Pager is what makes the stack
+ * swipeable and a Pager holds all its pages. That is a real cost -- a six photo
+ * share is every photo fetched at once rather than one at a time -- and it buys
+ * the thing worth having: someone can touch the screen instead of talking to it.
+ */
+async function showStack(
   envelope: RequestEnvelope,
   deps: PhotoDeps,
   batch: GalleryBatch,
-  index: number,
   spoken: string,
 ): Promise<ResponseEnvelope> {
-  const session = writeSession({ batchId: batch.batchId, index });
+  const session = writeSession({ batchId: batch.batchId, index: 0 });
 
   if (!supportsApl(envelope) || !deps.store) {
     // Screenless is a first-class outcome, not a failure.
     return speak(spoken, { keepSessionOpen: true, sessionAttributes: session });
   }
 
-  const item = batch.items[index];
-  if (!item) return speak(spoken, { keepSessionOpen: true, sessionAttributes: session });
-
-  let imageUrl: string;
+  const store = deps.store;
+  let slides: PhotoSlide[];
   try {
-    imageUrl = await photoUrl(item.mediaId, item.storageKey, deps, deps.store);
+    slides = await Promise.all(
+      batch.items.map(async (item, index) => ({
+        imageUrl: await photoUrl(item.mediaId, item.storageKey, deps, store),
+        position: positionLabel(index, batch.items.length),
+      })),
+    );
   } catch (error: unknown) {
-    // Never fall back to a public URL. Speak, and skip the picture.
+    // Never fall back to a public URL. Speak, and skip the pictures.
     logger.error('signed url generation failed', {
-      mediaId: item.mediaId,
+      batchId: batch.batchId,
       reason: error instanceof Error ? error.message : 'unknown',
     });
     return speak(`${spoken} ${cannotShowRightNow()}`, {
@@ -129,12 +144,7 @@ async function showSlide(
     keepSessionOpen: true,
     sessionAttributes: session,
     directives: [
-      renderPhotoDirective({
-        imageUrl,
-        caption: slideCaption(batch),
-        position: positionLabel(index, batch.items.length),
-        fit: deps.photoFit,
-      }),
+      renderPhotoDirective({ slides, caption: slideCaption(batch), fit: deps.photoFit }),
     ],
   });
 }
@@ -154,7 +164,7 @@ export async function handleShowLatestPhotos(
     hasScreen: supportsApl(envelope),
   });
 
-  return showSlide(envelope, deps, batch, 0, spoken);
+  return showStack(envelope, deps, batch, spoken);
 }
 
 export async function handlePhotoNavigation(
@@ -168,6 +178,23 @@ export async function handlePhotoNavigation(
   const batch = await getBatch(deps.db, session.batchId);
   if (!batch || batch.items.length === 0) return speak(emptyGallery());
 
+  if (supportsApl(envelope) && deps.store) {
+    // The stack is already on the device. Move it rather than rebuilding it,
+    // and move it relative to the page the *device* is showing -- so asking
+    // after swiping does what it says, and Charlie never has to guess where
+    // someone's finger left the pile. Nothing is spoken: the photo is the
+    // answer, and narrating every swipe would be noise.
+    return speak('', {
+      keepSessionOpen: true,
+      sessionAttributes: writeSession(session),
+      directives: [movePhotoDirective(direction)],
+    });
+  }
+
+  // Without a screen there is no stack to move, so Charlie walks the share and
+  // says where it is. Never the vision description: it is written for search
+  // and for someone who cannot see the photo, and reading "a child in a purple
+  // swimsuit with raised arms" to a family who know the child is a case file.
   const wanted = direction === 'next' ? session.index + 1 : session.index - 1;
   if (wanted >= batch.items.length) {
     return speak(endOfBatch(), {
@@ -182,13 +209,10 @@ export async function handlePhotoNavigation(
     });
   }
 
-  // Never the vision description. It is written for search and for someone who
-  // cannot see the photo -- "a child in a purple swimsuit with raised arms" --
-  // and reading it to a family who know exactly who that child is turns a
-  // grandchild into a case file. The photo is on screen; the position is all
-  // that needs saying.
-  const spoken = positionLabel(wanted, batch.items.length) ?? '';
-  return showSlide(envelope, deps, batch, wanted, spoken);
+  return speak(positionLabel(wanted, batch.items.length) ?? '', {
+    keepSessionOpen: true,
+    sessionAttributes: writeSession({ batchId: session.batchId, index: wanted }),
+  });
 }
 
 /** "Who sent these?" and "when did she send them?" about what is in view. */

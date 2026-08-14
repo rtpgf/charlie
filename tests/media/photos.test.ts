@@ -177,34 +177,53 @@ describe('showing the latest pictures', () => {
 });
 
 describe('navigating a share', () => {
-  it('moves to the next photo', async () => {
+  it('moves the stack on the device rather than rebuilding it', async () => {
     await sharePhotos(3);
     const first = await ask('ShowLatestPicturesIntent', { screen: true });
     const session = first.body.sessionAttributes as Record<string, unknown>;
 
     const next = await ask('AMAZON.NextIntent', { screen: true, session });
 
-    expect(next.body.sessionAttributes['photoIndex']).toBe(1);
-    expect(directives(next)).toHaveLength(1);
+    const directive = directives(next)[0] as Record<string, unknown>;
+    expect(directive['type']).toBe('Alexa.Presentation.APL.ExecuteCommands');
+    const command = (directive['commands'] as Record<string, unknown>[])[0]!;
+    expect(command['type']).toBe('SetPage');
+    expect(command['value']).toBe(1);
   });
 
-  it('moves back to the previous photo', async () => {
+  it('moves relative to the page the device is showing, not a remembered index', async () => {
     await sharePhotos(3);
     const first = await ask('ShowLatestPicturesIntent', { screen: true });
+
     const next = await ask('AMAZON.NextIntent', {
       screen: true,
       session: first.body.sessionAttributes,
     });
 
-    const back = await ask('AMAZON.PreviousIntent', {
-      screen: true,
-      session: next.body.sessionAttributes,
-    });
-
-    expect(back.body.sessionAttributes['photoIndex']).toBe(0);
+    // Someone may have swiped between turns. Charlie must not assume it knows
+    // which photo is on the screen -- the device does, so it decides.
+    const command = ((directives(next)[0] as Record<string, unknown>)[
+      'commands'
+    ] as Record<string, unknown>[])[0]!;
+    expect(command['position']).toBe('relative');
   });
 
-  it('never reads the vision description aloud', async () => {
+  it('moves back the other way', async () => {
+    await sharePhotos(3);
+    const first = await ask('ShowLatestPicturesIntent', { screen: true });
+
+    const back = await ask('AMAZON.PreviousIntent', {
+      screen: true,
+      session: first.body.sessionAttributes,
+    });
+
+    const command = ((directives(back)[0] as Record<string, unknown>)[
+      'commands'
+    ] as Record<string, unknown>[])[0]!;
+    expect(command['value']).toBe(-1);
+  });
+
+  it('says nothing at all when moving a stack someone can see', async () => {
     await sharePhotos(3, "Here's Natalie at the beach!");
     const first = await ask('ShowLatestPicturesIntent', { screen: true });
 
@@ -213,25 +232,41 @@ describe('navigating a share', () => {
       session: first.body.sessionAttributes,
     });
 
-    // The description is written for search and for someone who cannot see the
-    // photo. Read to a family who know the child, it is a case file.
-    expect(spoken(next)).toBe('2 of 3');
-    expect(spoken(next).toLowerCase()).not.toContain('a child');
+    // The photo is the answer. Narrating every swipe would be noise, and the
+    // vision description -- "a child in a purple swimsuit" -- read to a family
+    // who know the child is a case file.
+    expect(next.body.response.outputSpeech).toBeUndefined();
   });
 
-  it('says when it reaches the end rather than wrapping', async () => {
+  it('walks the share aloud when there is no screen to swipe', async () => {
+    await sharePhotos(3);
+    const first = await ask('ShowLatestPicturesIntent', { screen: false });
+
+    const next = await ask('AMAZON.NextIntent', {
+      screen: false,
+      session: first.body.sessionAttributes,
+    });
+
+    expect(spoken(next)).toBe('2 of 3');
+    expect(next.body.sessionAttributes['photoIndex']).toBe(1);
+    expect(directives(next)).toEqual([]);
+  });
+
+  it('says when a screenless share runs out, rather than wrapping', async () => {
     await sharePhotos(2);
-    const first = await ask('ShowLatestPicturesIntent', { screen: true });
+    const first = await ask('ShowLatestPicturesIntent', { screen: false });
     const second = await ask('AMAZON.NextIntent', {
-      screen: true,
+      screen: false,
       session: first.body.sessionAttributes,
     });
 
     const past = await ask('AMAZON.NextIntent', {
-      screen: true,
+      screen: false,
       session: second.body.sessionAttributes,
     });
 
+    // A stack you can see wraps, because the position marker tells you where
+    // you are. Spoken, looping silently would just be confusing.
     expect(spoken(past)).toBe("That's the last one.");
   });
 
@@ -279,17 +314,25 @@ describe('the photo document itself', () => {
     return [];
   }
 
-  const slide = {
-    imageUrl: 'https://example.test/signed/photo.jpg?token=abc',
-    caption: 'Jenna: Natalie at the beach!',
-    position: '1 of 2',
-  };
+  const CAPTION = 'Jenna: Natalie at the beach!';
+
+  /** A share of `count` photos, the way the handler builds one. */
+  function stack(count: number, fit?: 'contain' | 'cover') {
+    return {
+      caption: CAPTION,
+      ...(fit ? { fit } : {}),
+      slides: Array.from({ length: count }, (_, index) => ({
+        imageUrl: `https://example.test/media/photo${index}`,
+        position: count > 1 ? `${index + 1} of ${count}` : undefined,
+      })),
+    };
+  }
 
   it('references no resource the document does not define', () => {
     // An unresolved `@name` reaches the device as a literal string where a
     // dimension belongs, and the component fails to inflate -- a blank screen
     // with no error anywhere. Cost us an evening.
-    const unresolved = strings(photoDocument(slide)).filter((value) => value.startsWith('@'));
+    const unresolved = strings(photoDocument(stack(2))).filter((v) => v.startsWith('@'));
 
     expect(unresolved).toEqual([]);
   });
@@ -297,11 +340,12 @@ describe('the photo document itself', () => {
   it('carries the photo and caption itself, with nothing left to resolve', () => {
     // A `${...}` binding that does not resolve renders as empty, which on a
     // device looks exactly like a photo that would not load. So there are none.
-    const values = strings(photoDocument(slide));
+    const values = strings(photoDocument(stack(2)));
 
-    expect(values).toContain(slide.imageUrl);
-    expect(values).toContain(slide.caption);
-    expect(values).toContain(slide.position);
+    expect(values).toContain('https://example.test/media/photo0');
+    expect(values).toContain('https://example.test/media/photo1');
+    expect(values).toContain(CAPTION);
+    expect(values).toContain('1 of 2');
     expect(values.filter((value) => value.includes('${'))).toEqual([]);
   });
 
@@ -323,14 +367,14 @@ describe('the photo document itself', () => {
   });
 
   it('leaves out the position marker for a single photo', () => {
-    const values = strings(photoDocument({ ...slide, position: undefined }));
+    const values = strings(photoDocument(stack(1)));
 
-    expect(values).toContain(slide.caption);
-    expect(values).not.toContain('1 of 2');
+    expect(values).toContain(CAPTION);
+    expect(values).not.toContain('1 of 1');
   });
 
   it('shows the whole photograph by default, rather than cropping it', () => {
-    const values = strings(photoDocument(slide));
+    const values = strings(photoDocument(stack(2)));
 
     // A face cropped out of frame is worse than a smaller face.
     expect(values).toContain('best-fit');
@@ -338,14 +382,14 @@ describe('the photo document itself', () => {
   });
 
   it('mats the photo like a print instead of bleeding it to the edges', () => {
-    const document = JSON.stringify(photoDocument(slide));
+    const document = JSON.stringify(photoDocument(stack(2)));
 
     expect(document).toContain('"type":"Frame"');
     expect(document).toContain('#FFFFFF');
   });
 
   it('fills the screen when asked to, and only then', () => {
-    const values = strings(photoDocument({ ...slide, fit: 'cover' }));
+    const values = strings(photoDocument(stack(2, 'cover')));
 
     expect(values).toContain('best-fill');
     expect(values).not.toContain('best-fit');
@@ -354,17 +398,49 @@ describe('the photo document itself', () => {
   it('paints its own background in both presentations', () => {
     // A transparent screen borrows whatever the device is showing.
     for (const fit of ['contain', 'cover'] as const) {
-      const document = photoDocument({ ...slide, fit });
-      const root = (document['mainTemplate'] as { items: Record<string, unknown>[] }).items[0]!;
-      expect(root['backgroundColor']).toBe('#1C3B47');
+      const document = JSON.stringify(photoDocument(stack(2, fit)));
+      expect(document).toContain('#1C3B47');
     }
   });
 
   it('keeps the caption readable in both presentations', () => {
     for (const fit of ['contain', 'cover'] as const) {
-      const values = strings(photoDocument({ ...slide, fit }));
-      expect(values).toContain(slide.caption);
-      expect(values).toContain(slide.position);
+      const values = strings(photoDocument(stack(2, fit)));
+      expect(values).toContain(CAPTION);
+      expect(values).toContain('1 of 2');
+    }
+  });
+
+  it('puts every photo in the share on the device, so it can be swiped', () => {
+    const document = JSON.stringify(photoDocument(stack(4)));
+
+    expect(document).toContain('"type":"Pager"');
+    for (let index = 0; index < 4; index += 1) {
+      expect(document).toContain(`photo${index}`);
+    }
+  });
+
+  it('wraps, so the top photo goes to the bottom of the stack', () => {
+    expect(JSON.stringify(photoDocument(stack(3)))).toContain('"navigation":"wrap"');
+  });
+
+  it('hints at the pile only when there is more than one photograph', () => {
+    // One photo is a print, not a stack. Cards behind it would be a lie.
+    const alone = JSON.stringify(photoDocument(stack(1)));
+    const several = JSON.stringify(photoDocument(stack(3)));
+
+    expect(several).toContain('transform');
+    expect(alone).not.toContain('transform');
+    expect(alone).toContain('"navigation":"none"');
+  });
+
+  it('writes each position inside its own page, so a swipe updates it', () => {
+    // Nothing else knows which photo is showing -- not the server, not the
+    // session. The page carries its own marker.
+    const pager = JSON.stringify(photoDocument(stack(3)));
+
+    for (const marker of ['1 of 3', '2 of 3', '3 of 3']) {
+      expect(pager).toContain(marker);
     }
   });
 
