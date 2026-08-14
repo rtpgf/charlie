@@ -1,7 +1,10 @@
 /**
  * The words Charlie says, kept out of the Alexa handler so that protocol
- * concerns and phrasing stay separable. Answers about family members are built
- * from the family model instead -- see src/family/describe.ts.
+ * concerns and phrasing stay separable. Answers about people in the group are
+ * built from the group model instead -- see src/group/describe.ts.
+ *
+ * Note: what Charlie *says* still uses natural words like "family". The model
+ * underneath is a group; a family is the first kind of group Charlie serves.
  */
 
 export function launchGreeting(): string {
@@ -25,7 +28,7 @@ export function goodbye(): string {
   return 'Goodbye.';
 }
 
-/** The family question arrived without a name attached. */
+/** The who-is question arrived without a name attached. */
 export function missingPersonName(): string {
   return "Sorry, I didn't catch who you were asking about.";
 }

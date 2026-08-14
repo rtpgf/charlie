@@ -30,6 +30,19 @@ export const config = {
      * Kept in the environment so no real account id lands in source control.
      */
     alexaUserId: process.env.DEV_ALEXA_USER_ID || undefined,
+    /** WhatsApp sender (wa_id / phone) mapped to Jenna by the seed. */
+    whatsappSenderId: process.env.DEV_WHATSAPP_SENDER_ID || undefined,
+  },
+  whatsapp: {
+    /** Shared with Meta at subscription time; echoes back hub.challenge. */
+    verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || undefined,
+    /** App secret, used to validate X-Hub-Signature-256 on every delivery. */
+    appSecret: process.env.WHATSAPP_APP_SECRET || undefined,
+    /** Bearer token for outbound sends. */
+    accessToken: process.env.WHATSAPP_ACCESS_TOKEN || undefined,
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || undefined,
+    /** Meta ships new Graph versions often; pin it in the environment. */
+    graphApiVersion: process.env.WHATSAPP_GRAPH_API_VERSION || 'v26.0',
   },
   alexa: {
     /**

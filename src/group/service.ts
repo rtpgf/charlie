@@ -1,10 +1,10 @@
 import type { Db } from '../db/index.js';
 import { describePerson } from './describe.js';
 import { findPeopleByName } from './graph.js';
-import { findHouseholdIdForAlexaUser, loadFamilyGraph } from './repository.js';
+import { findHouseholdIdForAlexaUser, loadGroupGraph } from './repository.js';
 
 /**
- * The application-layer entry points for family questions. The Alexa handler
+ * The application-layer entry points for group questions. The Alexa handler
  * calls these; it never touches SQL or walks relationships itself.
  */
 
@@ -13,7 +13,7 @@ export async function resolveHousehold(db: Db, alexaUserId: string): Promise<str
 }
 
 /**
- * Answers "who is <name>?" deterministically from stored family data.
+ * Answers "who is <name>?" deterministically from stored group data.
  * Returns speech, including for the not-found and ambiguous cases, so the
  * handler has nothing to decide.
  */
@@ -22,7 +22,7 @@ export async function answerWhoIs(
   householdId: string,
   spokenName: string,
 ): Promise<string> {
-  const graph = await loadFamilyGraph(db, householdId);
+  const graph = await loadGroupGraph(db, householdId);
   const matches = findPeopleByName(graph, spokenName);
 
   if (matches.length === 0) {

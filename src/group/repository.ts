@@ -1,8 +1,8 @@
 import type { Db } from '../db/index.js';
-import type { FamilyGraph, Gender, Person, RelationshipType } from './graph.js';
+import type { GroupGraph, Gender, Person, RelationshipType } from './graph.js';
 
 /**
- * All SQL for the family model lives here. A household is small, so its people
+ * All SQL for the group model lives here. A household is small, so its people
  * and asserted relationships are loaded in full and reasoned about in memory
  * (see graph.ts) rather than expressed as recursive queries.
  */
@@ -18,7 +18,7 @@ export async function findHouseholdIdForAlexaUser(
   return row ? (row['household_id'] as string) : null;
 }
 
-export async function loadFamilyGraph(db: Db, householdId: string): Promise<FamilyGraph> {
+export async function loadGroupGraph(db: Db, householdId: string): Promise<GroupGraph> {
   const people = await db.query(
     `SELECT id, full_name, preferred_name, gender FROM person WHERE household_id = $1`,
     [householdId],

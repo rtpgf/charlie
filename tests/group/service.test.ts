@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { seedWeekendCharlie } from '../../src/db/seed.js';
-import { answerWhoIs, resolveHousehold } from '../../src/family/service.js';
+import { answerWhoIs, resolveHousehold } from '../../src/group/service.js';
 import { createSeededTestDb, createTestDb } from '../helpers/db.js';
 
 const ALEXA_USER = 'amzn1.ask.account.test-household-owner';

@@ -1,7 +1,7 @@
 import type { RequestEnvelope, ResponseEnvelope } from 'ask-sdk-model';
 
 import type { Db } from '../db/index.js';
-import { answerWhoIs, resolveHousehold } from '../family/service.js';
+import { answerWhoIs, resolveHousehold } from '../group/service.js';
 import { logger } from '../logger.js';
 import {
   goodbye,

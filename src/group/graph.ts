@@ -1,5 +1,9 @@
 /**
- * The family model and the deterministic kinship rules over it.
+ * The group model and the deterministic kinship rules over it.
+ *
+ * "Group" rather than "family" is deliberate: the relationships here are
+ * kinship, but the container is not assumed to be a family. A family is the
+ * first kind of group Charlie serves, not the only one it could serve.
  *
  * Everything here is pure and synchronous: a household's people and asserted
  * relationships are small enough to load in full and reason about in memory.
@@ -26,7 +30,7 @@ export interface Relationship {
   objectId: string;
 }
 
-export interface FamilyGraph {
+export interface GroupGraph {
   people: Person[];
   relationships: Relationship[];
 }
@@ -55,7 +59,7 @@ function namesFor(person: Person): string[] {
  * All people answering to a name, case-insensitively. Returns every match
  * rather than picking one, so callers can decline to guess when ambiguous.
  */
-export function findPeopleByName(graph: FamilyGraph, spokenName: string): Person[] {
+export function findPeopleByName(graph: GroupGraph, spokenName: string): Person[] {
   const wanted = normalize(spokenName);
   if (!wanted) return [];
 
@@ -72,24 +76,24 @@ export function findPeopleByName(graph: FamilyGraph, spokenName: string): Person
   );
 }
 
-export function findPersonById(graph: FamilyGraph, personId: string): Person | undefined {
+export function findPersonById(graph: GroupGraph, personId: string): Person | undefined {
   return graph.people.find((person) => person.id === personId);
 }
 
-function peopleByIds(graph: FamilyGraph, ids: string[]): Person[] {
+function peopleByIds(graph: GroupGraph, ids: string[]): Person[] {
   return ids
     .map((id) => findPersonById(graph, id))
     .filter((person): person is Person => person !== undefined);
 }
 
-export function parentsOf(graph: FamilyGraph, personId: string): Person[] {
+export function parentsOf(graph: GroupGraph, personId: string): Person[] {
   const ids = graph.relationships
     .filter((rel) => rel.type === 'parent_of' && rel.objectId === personId)
     .map((rel) => rel.subjectId);
   return peopleByIds(graph, ids);
 }
 
-export function childrenOf(graph: FamilyGraph, personId: string): Person[] {
+export function childrenOf(graph: GroupGraph, personId: string): Person[] {
   const ids = graph.relationships
     .filter((rel) => rel.type === 'parent_of' && rel.subjectId === personId)
     .map((rel) => rel.objectId);
@@ -101,7 +105,7 @@ export function childrenOf(graph: FamilyGraph, personId: string): Person[] {
  * inferred from a shared parent -- that would assert a relationship nobody
  * stated, which Family Canon needs to keep distinguishable.
  */
-export function siblingsOf(graph: FamilyGraph, personId: string): Person[] {
+export function siblingsOf(graph: GroupGraph, personId: string): Person[] {
   const ids = graph.relationships
     .filter((rel) => rel.type === 'sibling_of')
     .flatMap((rel) => {
@@ -113,7 +117,7 @@ export function siblingsOf(graph: FamilyGraph, personId: string): Person[] {
 }
 
 /** Derived: the siblings of this person's parents. */
-export function auntsAndUnclesOf(graph: FamilyGraph, personId: string): Person[] {
+export function auntsAndUnclesOf(graph: GroupGraph, personId: string): Person[] {
   const ids = parentsOf(graph, personId)
     .flatMap((parent) => siblingsOf(graph, parent.id))
     .map((person) => person.id)
@@ -122,7 +126,7 @@ export function auntsAndUnclesOf(graph: FamilyGraph, personId: string): Person[]
 }
 
 /** Derived: the children of this person's siblings. */
-export function niecesAndNephewsOf(graph: FamilyGraph, personId: string): Person[] {
+export function niecesAndNephewsOf(graph: GroupGraph, personId: string): Person[] {
   const ids = siblingsOf(graph, personId)
     .flatMap((sibling) => childrenOf(graph, sibling.id))
     .map((person) => person.id)

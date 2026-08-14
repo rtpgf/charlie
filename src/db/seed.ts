@@ -1,4 +1,5 @@
 import type { Db } from './index.js';
+import { normalizePhoneIdentity } from '../messaging/types.js';
 
 export const HOUSEHOLD_NAME = 'Weekend Charlie';
 
@@ -44,7 +45,11 @@ const RELATIONSHIPS: Array<{ subject: string; type: 'parent_of' | 'sibling_of'; 
 export interface SeedResult {
   householdId: string;
   alexaUserMapped: boolean;
+  whatsappSenderMapped: boolean;
 }
+
+/** The seeded group member a development WhatsApp sender is mapped to. */
+const DEV_WHATSAPP_PERSON = 'jenna';
 
 /**
  * Rebuilds the development household from scratch. Idempotent: running it twice
@@ -52,7 +57,7 @@ export interface SeedResult {
  */
 export async function seedWeekendCharlie(
   db: Db,
-  options: { alexaUserId?: string | undefined } = {},
+  options: { alexaUserId?: string | undefined; whatsappSenderId?: string | undefined } = {},
 ): Promise<SeedResult> {
   // Cascades through people, aliases, relationships and the Alexa mapping.
   await db.query('DELETE FROM household WHERE name = $1', [HOUSEHOLD_NAME]);
@@ -105,5 +110,21 @@ export async function seedWeekendCharlie(
     );
   }
 
-  return { householdId, alexaUserMapped: Boolean(options.alexaUserId) };
+  // Deleting the household cascades to person_contact, so this is rebuilt too.
+  const whatsappSenderId = options.whatsappSenderId
+    ? normalizePhoneIdentity(options.whatsappSenderId)
+    : undefined;
+
+  if (whatsappSenderId) {
+    await db.query(
+      `INSERT INTO person_contact (person_id, channel, external_id) VALUES ($1, 'whatsapp', $2)`,
+      [personIds.get(DEV_WHATSAPP_PERSON), whatsappSenderId],
+    );
+  }
+
+  return {
+    householdId,
+    alexaUserMapped: Boolean(options.alexaUserId),
+    whatsappSenderMapped: Boolean(whatsappSenderId),
+  };
 }

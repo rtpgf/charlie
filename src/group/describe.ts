@@ -4,7 +4,7 @@ import {
   niecesAndNephewsOf,
   parentsOf,
   siblingsOf,
-  type FamilyGraph,
+  type GroupGraph,
   type Gender,
   type Person,
 } from './graph.js';
@@ -12,7 +12,7 @@ import {
 /**
  * Turns the derived kinship of one person into a spoken sentence.
  *
- * Nothing here is written for a particular family member: the wording comes
+ * Nothing here is written for a particular person: the wording comes
  * from the relationships that exist and the gender recorded on the person, so
  * adding people to the household changes the answers with no code change.
  */
@@ -65,7 +65,7 @@ function fullNameIsInformative(person: Person): boolean {
   return !person.fullName.toLowerCase().includes(person.preferredName.toLowerCase());
 }
 
-export function describePerson(graph: FamilyGraph, person: Person): string {
+export function describePerson(graph: GroupGraph, person: Person): string {
   const gender = person.gender;
 
   const clauses = [

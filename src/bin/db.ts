@@ -22,14 +22,23 @@ async function main(): Promise<void> {
     }
 
     case 'seed': {
-      const result = await seedWeekendCharlie(pool, { alexaUserId: config.dev.alexaUserId });
+      const result = await seedWeekendCharlie(pool, {
+        alexaUserId: config.dev.alexaUserId,
+        whatsappSenderId: config.dev.whatsappSenderId,
+      });
       logger.info('seed complete', {
         householdId: result.householdId,
         alexaUserMapped: result.alexaUserMapped,
+        whatsappSenderMapped: result.whatsappSenderMapped,
       });
       if (!result.alexaUserMapped) {
         logger.warn('DEV_ALEXA_USER_ID is not set, so no Alexa account was mapped', {
           hint: 'See README "Alexa user mapping"',
+        });
+      }
+      if (!result.whatsappSenderMapped) {
+        logger.warn('DEV_WHATSAPP_SENDER_ID is not set, so no WhatsApp sender was mapped', {
+          hint: 'See README "Seeded sender mapping"',
         });
       }
       break;

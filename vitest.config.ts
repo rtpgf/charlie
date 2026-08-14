@@ -15,6 +15,12 @@ export default defineConfig({
       LOG_LEVEL: 'error',
       ALEXA_VERIFY_REQUESTS: 'false',
       ALEXA_SKILL_ID: '',
+      // Must match tests/helpers/whatsapp.ts.
+      WHATSAPP_APP_SECRET: 'test-app-secret',
+      WHATSAPP_VERIFY_TOKEN: 'test-verify-token',
+      WHATSAPP_ACCESS_TOKEN: '',
+      WHATSAPP_PHONE_NUMBER_ID: '',
+      DEV_WHATSAPP_SENDER_ID: '',
     },
   },
 });

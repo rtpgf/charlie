@@ -1,15 +1,26 @@
-# Weekend Charlie — Milestone 1
+# Weekend Charlie
 
-The smallest working backend that can serve as the HTTPS endpoint for an Alexa
-Custom Skill named **Charlie**.
-
-Goal of this milestone: say "Alexa, open Charlie" to a physical Echo and hear
-words authored by this server.
-
-> Alexa: "Hi. I'm Charlie. Weekend Charlie is alive."
-
-Nothing else is implemented. No AI, no SMS, no database, no photos.
+A feasibility prototype: an Alexa-first family assistant backend.
 See [CHARLIE.md](CHARLIE.md) for the product direction.
+
+**Working today**
+
+| Milestone | What it does |
+| --------- | ------------ |
+| 1 | A physical Echo speaks words authored by this server |
+| 2 | Charlie answers family questions from structured data in Postgres |
+| 3 | Family members message Charlie on WhatsApp; messages are stored verbatim |
+
+```text
+"Alexa, open weekend charlie."          -> Hi. I'm Charlie. Weekend Charlie is alive.
+"Alexa, ask weekend charlie who JT is." -> JT is James Thomas. He's Hannah's son
+                                           and Jenna's nephew.
+WhatsApp: "I'm coming over at three."   -> Got it. I've saved your message.
+```
+
+**Not built yet.** No AI or LLM of any kind, no SMS, no photo retrieval, no
+reminders. Charlie stores what family members say without yet understanding it —
+interpretation is the next milestone.
 
 ## Requirements
 
@@ -29,7 +40,7 @@ Then set `DATABASE_URL` in `.env` and create the schema — see
 
 ## Database
 
-Charlie stores its family knowledge in Postgres. Any Postgres works; Supabase
+Charlie stores its group knowledge in Postgres. Any Postgres works; Supabase
 is the path of least resistance because it needs nothing installed locally.
 
 **Supabase**: create a project, then click **Connect** at the top of the
@@ -62,18 +73,34 @@ npm run db:seed        # rebuilds the "Weekend Charlie" household
 `db:seed` is idempotent — re-run it freely; it replaces the household rather
 than duplicating it.
 
+### A note on "group" vs "family"
+
+The data model says **group**, not family: `group_message`, `src/group/`,
+`InboundGroupMessage`. The relationships Charlie stores are kinship, but the
+container holding them need not be a family — a care team or a circle of friends
+is the same shape, and baking "family" into table names would have been awkward
+to undo later.
+
+**A family remains the focus.** It is the first kind of group Charlie serves,
+and what Charlie *says* out loud still uses ordinary words: "You can ask me
+about someone in the family." The rename is about the model underneath, not
+about how Charlie talks.
+
+`household` keeps its name for now, though it carries a similar assumption and
+may deserve the same treatment later.
+
 ### Schema
 
 | Table          | Holds                                                          |
 | -------------- | -------------------------------------------------------------- |
-| `household`    | One family unit                                                 |
+| `household`    | One group -- a family, for now                                  |
 | `alexa_user`   | Maps an Alexa `userId` to a household                           |
 | `person`       | Full name, preferred name, optional gender                      |
 | `person_alias` | Extra names a person answers to (`JT`, `James`, `James Thomas`) |
 | `relationship` | **Asserted** relationships only, with provenance                |
 
 Only asserted relationships are stored (`parent_of`, `sibling_of`). Aunt, uncle,
-niece, and nephew are derived at query time in [graph.ts](src/family/graph.ts)
+niece, and nephew are derived at query time in [graph.ts](src/group/graph.ts)
 and never written to the database — persisting a derivation would later make it
 impossible to tell what a family member actually said from what Charlie worked
 out. Every relationship row carries `source_type` and `confidence`; seeded rows
@@ -272,12 +299,165 @@ publicly reachable and that check is its only protection.
 The simulator is still useful for one thing: confirming an invocation name
 resolves and the request reaches our logs at all.
 
+## Group messaging (WhatsApp)
+
+Group members message Charlie on WhatsApp. This milestone establishes the pipe
+and nothing more: messages are stored exactly as sent, and Charlie does not yet
+interpret them.
+
+```text
+Meta WhatsApp webhook
+        ↓  signature verified (X-Hub-Signature-256)
+WhatsApp adapter          src/messaging/whatsapp/
+        ↓  InboundGroupMessage  (transport-neutral)
+Messaging service         src/messaging/service.ts
+        ↓  sender + household resolution
+group_message            original text, provider provenance
+        ↓
+"Got it. I've saved your message."
+```
+
+The adapter is the only code that understands Meta's JSON. Everything past it
+works on `InboundGroupMessage`, so adding SMS later means writing a second
+adapter and changing nothing else.
+
+### Meta setup
+
+In the [Meta App Dashboard](https://developers.facebook.com/apps):
+
+1. **Create App** → use case **Connect with customers through WhatsApp** →
+   select or create a business portfolio.
+2. Open the use case: sidebar **Use cases** → *Connect with customers through
+   WhatsApp* → **Customize**. Meta's current navigation nests everything WhatsApp
+   inside the use case; there is no top-level "WhatsApp" sidebar item.
+3. **API Setup** (inside the use case). Meta provides a free test *From* number.
+   Add your own number under *To* as an allowed recipient — the test number can
+   only message numbers you list there.
+4. From that panel, copy the **Phone number ID** (not the phone number) into
+   `WHATSAPP_PHONE_NUMBER_ID`, and **Generate access token** into
+   `WHATSAPP_ACCESS_TOKEN`. The generated token is temporary; for a longer-lived
+   one, create a System User under Business Settings with
+   `whatsapp_business_messaging` and `whatsapp_business_management`.
+5. **App settings → Basic → App secret** → `WHATSAPP_APP_SECRET`. This is what
+   every inbound webhook is verified against.
+6. Choose any string for `WHATSAPP_VERIFY_TOKEN`. It is yours to invent; it only
+   has to match in the next step.
+7. **Configuration → Webhook → Edit** (also inside the use case):
+   - Callback URL: `https://charlie.servehttp.com/webhooks/whatsapp`
+   - Verify token: the same string
+   - Click **Verify and save**. Meta immediately issues the `GET` challenge —
+     Charlie must already be running, or verification fails.
+8. Still under Configuration, **Manage** webhook fields and subscribe to
+   **`messages`**. Without this subscription the endpoint verifies but no
+   message events are ever delivered.
+9. **Subscribe your app to the WhatsApp Business Account.** This is a second,
+   separate subscription that the dashboard does not appear to expose, and
+   without it real messages are delivered to Meta's own
+   `WA DevX Webhook Events 1P App` instead of yours. Everything else looks
+   healthy while inbound silently goes nowhere.
+
+   ```bash
+   # check which apps the WABA is subscribed to
+   curl -s "https://graph.facebook.com/v26.0/<WABA_ID>/subscribed_apps" \
+     -H "Authorization: Bearer $WHATSAPP_ACCESS_TOKEN"
+
+   # subscribe this app (additive; Meta's 1P app stays)
+   curl -s -X POST "https://graph.facebook.com/v26.0/<WABA_ID>/subscribed_apps" \
+     -H "Authorization: Bearer $WHATSAPP_ACCESS_TOKEN"
+   ```
+
+   The WhatsApp Business Account ID is shown next to the Phone number ID in
+   Step 1. Reversible with the same URL and `-X DELETE`.
+
+Restart the server after editing `.env` — `tsx watch` does not watch it.
+
+### Testing inbound from a real phone
+
+The test *From* number is a reserved `+1 555` number: **you cannot start a
+conversation with it**. Adding it as a contact and messaging it does nothing,
+with no error anywhere.
+
+Instead, use **Step 1 → Send a message from your test number** to send yourself
+a message, then **reply inside that thread**. The reply is what produces an
+inbound webhook.
+
+The dashboard's per-field **Test** button is useful for isolating problems: it
+delivers a signed sample payload at the app level, so it succeeds even when the
+WABA subscription above is missing. If Test works but real messages never
+arrive, suspect that subscription.
+
+Log lines confirming Meta reached you:
+
+```json
+{"level":"info","msg":"whatsapp webhook verified"}
+{"level":"info","msg":"whatsapp webhook received","channel":"whatsapp","messageCount":1}
+{"level":"info","msg":"stored inbound group message","messageStored":true}
+```
+
+### Seeded sender mapping
+
+A person's messaging identities live in `person_contact`, keyed by channel, so
+the group model never gains a WhatsApp column. Map your own number to Jenna:
+
+```
+DEV_WHATSAPP_SENDER_ID=+12145550101
+```
+
+```bash
+npm run db:seed
+```
+
+Look for `"whatsappSenderMapped":true`. The value is normalized to digits, so
+`+1 (214) 555-0101` and `12145550101` are equivalent. If you don't know the
+identifier WhatsApp will use, send a message first: the rejection logs a masked
+sender, and the `wa_id` is your number in international format without the `+`.
+
+### What is validated
+
+- **`GET`** — the subscription challenge. `hub.mode` must be `subscribe` and
+  `hub.verify_token` must match, compared in constant time. Only then is
+  `hub.challenge` echoed back; otherwise `403`.
+- **`POST`** — every delivery must carry `X-Hub-Signature-256`, an HMAC-SHA256
+  of the **raw** request body keyed by the app secret, compared in constant
+  time. Unsigned, wrongly signed, or altered bodies get `403` and are never
+  parsed. Node's `crypto` does this; no dependency was added.
+
+If `WHATSAPP_APP_SECRET` or `WHATSAPP_VERIFY_TOKEN` is unset the endpoints
+return `503` rather than accepting unverified traffic. Alexa is unaffected.
+
+### Behaviour worth knowing
+
+- **Unknown senders are dropped.** No person is created, no message is stored,
+  and no reply is sent — replying would confirm to a stranger that the number is
+  live. The webhook still returns `200` so Meta stops retrying.
+- **Redelivery is idempotent.** `(channel, external_message_id)` is unique;
+  a repeat insert is ignored and no second acknowledgment is sent.
+- **Media is recognized, not retrieved.** An image logs
+  `recognized unsupported inbound media message` with metadata normalized for a
+  later milestone. Nothing is downloaded or stored.
+- **Storage failure never claims success.** If the database is unavailable
+  Charlie replies "I'm having trouble saving that right now" instead.
+- **Acknowledgment failure never undoes storage.** The message stays; the send
+  failure is logged.
+
+### Meta platform limits
+
+- **24-hour service window.** Free-form replies are only allowed within 24 hours
+  of the user's last message. Charlie's acknowledgment is always an immediate
+  reply, so it qualifies — but anything Charlie initiates later will need a
+  pre-approved message template.
+- The **test number can only message recipients you explicitly add**, and
+  broadcasts from it are capped at five.
+- An unverified business is limited to 250 conversations per 24 hours.
+
 ## Endpoints
 
-| Method | Path      | Purpose                                     |
-| ------ | --------- | ------------------------------------------- |
-| `GET`  | `/health` | `{"status":"ok","service":"weekend-charlie"}` |
-| `POST` | `/alexa`  | Alexa Custom Skill request envelope          |
+| Method | Path                  | Purpose                                       |
+| ------ | --------------------- | --------------------------------------------- |
+| `GET`  | `/health`             | `{"status":"ok","service":"weekend-charlie"}`  |
+| `POST` | `/alexa`              | Alexa Custom Skill request envelope            |
+| `GET`  | `/webhooks/whatsapp`  | Meta webhook subscription challenge            |
+| `POST` | `/webhooks/whatsapp`  | Meta webhook message delivery                  |
 
 `/alexa` handles `LaunchRequest`, answers family questions via
 `WhoIsPersonIntent`, supports Help/Stop/Cancel, acknowledges
@@ -304,6 +484,12 @@ All settings live in `.env` (see `.env.example`).
 | `ALEXA_SKILL_ID`        | _(unset)_     | When set, rejects requests from any other skill              |
 | `DATABASE_URL`          | _(unset)_     | Postgres connection string (Supabase or any Postgres)        |
 | `DEV_ALEXA_USER_ID`     | _(unset)_     | Alexa userId mapped to the seeded household by `db:seed`     |
+| `WHATSAPP_VERIFY_TOKEN` | _(unset)_     | Shared with Meta for the webhook setup challenge             |
+| `WHATSAPP_APP_SECRET`   | _(unset)_     | Validates `X-Hub-Signature-256` on every delivery            |
+| `WHATSAPP_ACCESS_TOKEN` | _(unset)_     | Bearer token for outbound sends                              |
+| `WHATSAPP_PHONE_NUMBER_ID` | _(unset)_  | Meta phone number ID used for sending                        |
+| `WHATSAPP_GRAPH_API_VERSION` | `v26.0`  | Graph API version for outbound calls                         |
+| `DEV_WHATSAPP_SENDER_ID` | _(unset)_    | WhatsApp sender mapped to Jenna by `db:seed`                 |
 
 ## Alexa request verification
 
@@ -331,7 +517,9 @@ and intent name. They deliberately exclude the request body, `userId`,
 
 ```
 migrations/
-  001_family.sql        schema, applied in filename order
+  001_family.sql        group model, applied in filename order (name is historical)
+  002_messaging.sql     person_contact + message storage
+  003_rename_family_to_group.sql
 alexa/
   interaction-model.json  paste into the console's JSON editor
 src/
@@ -349,22 +537,32 @@ src/
     index.ts            connection pool + the Db interface
     migrate.ts          migration runner
     seed.ts             the development household
-  family/
-    graph.ts            family model + kinship rules (pure)
+  group/
+    graph.ts            group model + kinship rules (pure)
     describe.ts         kinship -> sentence (pure)
-    repository.ts       all SQL for the family model
+    repository.ts       all SQL for the group model
     service.ts          what the Alexa handler calls
+  messaging/
+    types.ts            transport-neutral message model
+    service.ts          resolve sender, persist, acknowledge
+    repository.ts       all SQL for messaging
+    whatsapp/
+      webhook.ts        GET challenge + POST delivery routes
+      verify.ts         signature and subscription checks
+      parse.ts          Meta payload -> InboundGroupMessage
+      client.ts         outbound send via Cloud API
+      types.ts          the parts of Meta's payload we read
   services/
     speech.ts           the words Charlie says
 tests/
 ```
 
 Alexa-protocol concerns stay in `src/alexa/`; the handler contains no SQL and
-walks no relationships. It calls `src/family/service.ts`, which loads a
+walks no relationships. It calls `src/group/service.ts`, which loads a
 household through `repository.ts` and reasons about it with the pure functions
 in `graph.ts` and `describe.ts`. A household is small, so it is loaded whole and
 traversed in memory rather than through recursive SQL — and keeping the rules
-pure means most family behaviour is testable with no database at all.
+pure means most group behaviour is testable with no database at all.
 
 Later intents add a case in `handler.ts` and a service function.
 
@@ -382,3 +580,15 @@ Noted while building, deliberately not built:
   fallbacks.
 - **Provenance beyond seeding**: `source_type` already distinguishes `seed`,
   `stated`, and `inferred`, but nothing yet writes the latter two.
+- **Media retrieval.** Inbound media is normalized (`externalMediaId`,
+  `mediaType`, `caption`) but never fetched. A photo milestone adds a download
+  step plus storage; nothing else in the pipeline should need to change.
+- **Raw provider payloads are deliberately not stored.** The normalized row plus
+  the provider message id carries enough provenance to debug, and keeping full
+  Meta JSON would retain personal data with no current use. If replay debugging
+  is ever needed, add a separate table rather than a column, so it can be
+  dropped independently.
+- **Sender onboarding.** Unknown senders are dropped entirely. Real households
+  will need an invitation flow so a family member can attach their own number.
+- **Message templates.** Anything Charlie initiates outside Meta's 24-hour
+  service window requires a pre-approved template.

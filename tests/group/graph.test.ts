@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { describePerson } from '../../src/family/describe.js';
+import { describePerson } from '../../src/group/describe.js';
 import {
   auntsAndUnclesOf,
   childrenOf,
@@ -8,22 +8,22 @@ import {
   niecesAndNephewsOf,
   parentsOf,
   siblingsOf,
-  type FamilyGraph,
+  type GroupGraph,
   type Person,
-} from '../../src/family/graph.js';
-import { loadFamilyGraph } from '../../src/family/repository.js';
+} from '../../src/group/graph.js';
+import { loadGroupGraph } from '../../src/group/repository.js';
 import { createSeededTestDb } from '../helpers/db.js';
 
 /**
  * Kinship rules exercised against the real seeded household, so these cover the
  * schema, the seed, and the derivation together rather than a hand-built graph.
  */
-describe('family graph', () => {
-  let graph: FamilyGraph;
+describe('group graph', () => {
+  let graph: GroupGraph;
 
   beforeAll(async () => {
     const { db, householdId } = await createSeededTestDb();
-    graph = await loadFamilyGraph(db, householdId);
+    graph = await loadGroupGraph(db, householdId);
   });
 
   function person(name: string): Person {

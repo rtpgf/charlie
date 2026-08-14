@@ -3,25 +3,41 @@ import express, { type Express } from 'express';
 import { describeRequest, handleAlexaRequest } from './alexa/handler.js';
 import { speak } from './alexa/responses.js';
 import { verifyAlexaRequest, verifySkillId } from './alexa/verify.js';
+import { config } from './config.js';
 import { getPool, type Db } from './db/index.js';
 import { logger } from './logger.js';
+import type { Messenger } from './messaging/types.js';
+import { createWhatsAppMessenger } from './messaging/whatsapp/client.js';
+import { createWhatsAppWebhookRouter } from './messaging/whatsapp/webhook.js';
 import { havingTrouble } from './services/speech.js';
 
 export interface ServerDeps {
   /** Defaults to the shared pool, which is created on first use so that
    *  database-free paths keep working without DATABASE_URL. */
   db?: Db;
+  /** Defaults to the WhatsApp client when Meta credentials are configured. */
+  messenger?: Messenger | undefined;
+}
+
+/** Only built when Meta credentials are present; WhatsApp stays optional. */
+function defaultMessenger(): Messenger | undefined {
+  const { accessToken, phoneNumberId, graphApiVersion } = config.whatsapp;
+  if (!accessToken || !phoneNumberId) return undefined;
+  return createWhatsAppMessenger({ accessToken, phoneNumberId, graphApiVersion });
 }
 
 export function createServer(deps: ServerDeps = {}): Express {
   const app = express();
   const db: Db = deps.db ?? { query: (text, params) => getPool().query(text, params) };
+  const messenger = deps.messenger ?? defaultMessenger();
 
   app.disable('x-powered-by');
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'weekend-charlie' });
   });
+
+  app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({ db, messenger }));
 
   app.post(
     '/alexa',

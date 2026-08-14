@@ -69,7 +69,7 @@ describe('POST /alexa', () => {
 });
 
 describe('WhoIsPersonIntent', () => {
-  it('answers about a family member from stored data', async () => {
+  it('answers about a group member from stored data', async () => {
     const response = await post(whoIsRequest('Natalie'));
 
     expect(response.status).toBe(200);
