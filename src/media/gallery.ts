@@ -15,6 +15,8 @@ export interface GalleryItem {
   description: string | null;
   sharedAt: Date;
   capturedAt: Date | null;
+  /** Width over height of the display copy. Null when never measured. */
+  aspect: number | null;
 }
 
 export interface GalleryBatch {
@@ -35,7 +37,16 @@ function toItem(row: Record<string, unknown>): GalleryItem {
     description: (row['description'] as string | null) ?? null,
     sharedAt: row['shared_at'] as Date,
     capturedAt: (row['captured_at'] as Date | null) ?? null,
+    aspect: aspectOf(row),
   };
+}
+
+/** Null rather than a guess: an unmeasured photo simply does not pan. */
+function aspectOf(row: Record<string, unknown>): number | null {
+  const width = row['display_width'] as number | null;
+  const height = row['display_height'] as number | null;
+  if (!width || !height) return null;
+  return width / height;
 }
 
 /**
@@ -66,7 +77,8 @@ export async function getLatestBatch(
   if (!row) return null;
 
   const items = await db.query(
-    `SELECT m.id, m.storage_key, m.sequence, m.shared_at, m.captured_at, a.description
+    `SELECT m.id, m.storage_key, m.sequence, m.shared_at, m.captured_at,
+            m.display_width, m.display_height, a.description
        FROM group_media m
        LEFT JOIN media_analysis a
          ON a.group_media_id = m.id AND a.status = 'accepted'
@@ -97,7 +109,8 @@ export async function getBatch(db: Db, batchId: string): Promise<GalleryBatch | 
   if (!row) return null;
 
   const items = await db.query(
-    `SELECT m.id, m.storage_key, m.sequence, m.shared_at, m.captured_at, a.description
+    `SELECT m.id, m.storage_key, m.sequence, m.shared_at, m.captured_at,
+            m.display_width, m.display_height, a.description
        FROM group_media m
        LEFT JOIN media_analysis a
          ON a.group_media_id = m.id AND a.status = 'accepted'
@@ -129,7 +142,7 @@ export async function getRecentMediaByPerson(
 ): Promise<GalleryItem[]> {
   const result = await db.query(
     `SELECT DISTINCT m.id, m.storage_key, m.sequence, m.shared_at, m.captured_at,
-            a.description
+            m.display_width, m.display_height, a.description
        FROM group_media m
        JOIN media_person_evidence e ON e.group_media_id = m.id
        LEFT JOIN media_analysis a

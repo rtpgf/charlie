@@ -15,6 +15,7 @@ import {
   insertMedia,
   markMediaFailed,
   markMediaStored,
+  setMediaDisplaySize,
   nextSequenceInBatch,
   updateBatchSummary,
   type MediaRow,
@@ -170,13 +171,18 @@ async function retrieveAndStore(
   // is still stored, still analyzed, and still served -- just at full size.
   if (deps.resizer) {
     try {
-      const resized = await storeDisplayCopy({
+      const display = await storeDisplayCopy({
         storageKey: key,
         bytes: download.bytes,
         store: deps.store,
         resizer: deps.resizer,
       });
-      logger.info('media display copy', { ...logContext, resized });
+      if (display) {
+        // The shape decides which way the photo pans on a screen, so it is
+        // recorded even when the photo was already small enough to serve.
+        await setMediaDisplaySize(deps.db, { mediaId: media.id, ...display });
+      }
+      logger.info('media display copy', { ...logContext, resized: display?.stored ?? false });
     } catch (error: unknown) {
       logger.warn('media display copy failed', {
         ...logContext,

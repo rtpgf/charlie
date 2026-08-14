@@ -60,17 +60,26 @@ const MATTE_PADDING = '14dp';
  * landscape screen gradually reveals the parts that were cut off.
  */
 const DRIFT_MS = 20_000;
+
 /**
- * Percentages, never viewport units. `translateX`/`translateY` take absolute
- * dimensions (`20dp`, `10px`) or a percentage of the *component*; a `vh` value
- * is not a dimension APL accepts here, and one invalid entry drops the whole
- * transform -- so the photo simply sits there, with nothing reported anywhere.
+ * How much larger than the screen the photograph is laid out.
  *
- * The pan stays inside the headroom the zoom creates: at 1.18 there is 9% of
- * the height spare at each edge, so 8% of travel never exposes an edge.
+ * This is what makes it a pan rather than a zoom. `best-fill` crops the image
+ * *inside* its component, so scaling that component only magnifies the crop --
+ * the parts that were cut off are gone and no amount of translating brings them
+ * back. Laying the image out half again as large along one axis and sliding it
+ * across the screen shows those parts instead.
  */
-const DRIFT_FROM = [{ scale: 1.0 }, { translateY: '0%' }];
-const DRIFT_TO = [{ scale: 1.18 }, { translateY: '-8%' }];
+const OVERSCAN = 1.5;
+
+/**
+ * The share of the component's own length that the pan travels.
+ *
+ * At 1.5x overscan, one third of the component hangs off the screen, so a third
+ * of travel goes exactly from one edge to the other. Slightly less, so the pan
+ * eases to a stop rather than arriving at the boundary.
+ */
+const TRAVEL_PERCENT = 30;
 
 /**
  * How a photo meets the screen.
@@ -96,6 +105,8 @@ export interface PhotoSlide {
   imageUrl: string;
   /** "2 of 6", omitted for a single photo. */
   position?: string | undefined;
+  /** Width over height. Absent means the photo is shown still. */
+  aspect?: number | null | undefined;
 }
 
 export interface PhotoStack {
@@ -114,7 +125,12 @@ export interface PhotoStack {
  * the Pager builds later still moves, and so the animation targets exactly the
  * photo it belongs to.
  */
-function driftCommands(id: string): unknown[] {
+function driftCommands(id: string, axis: 'x' | 'y'): unknown[] {
+  const from = axis === 'y' ? { translateY: '0%' } : { translateX: '0%' };
+  const to =
+    axis === 'y'
+      ? { translateY: `-${TRAVEL_PERCENT}%` }
+      : { translateX: `-${TRAVEL_PERCENT}%` };
   return [
     {
       type: 'AnimateItem',
@@ -125,9 +141,34 @@ function driftCommands(id: string): unknown[] {
       // started would draw the eye to the animation instead of the face.
       repeatCount: 60,
       repeatMode: 'reverse',
-      value: [{ property: 'transform', from: DRIFT_FROM, to: DRIFT_TO }],
+      // Percentages, never viewport units. translateX/translateY take absolute
+      // dimensions or a percentage of the component; a `vh` value is not one
+      // APL accepts here, and one invalid entry drops the whole transform --
+      // so the photo simply sits there, with nothing reported anywhere.
+      value: [{ property: 'transform', from: [from], to: [to] }],
     },
   ];
+}
+
+/**
+ * Which way a photograph pans, and how it is laid out to allow it.
+ *
+ * Along its long axis: a portrait photo on a landscape screen has its top and
+ * bottom cropped away, so panning down is what reveals them. Unmeasured photos
+ * do not pan at all -- a guess here crops the wrong edge off every photo in a
+ * share, which is worse than stillness.
+ */
+function panFor(aspect: number | null | undefined): {
+  axis: 'x' | 'y';
+  width: string;
+  height: string;
+  align: string;
+} | null {
+  if (!aspect || !Number.isFinite(aspect)) return null;
+  const over = `${OVERSCAN * 100}%`;
+  return aspect < 1
+    ? { axis: 'y', width: '100%', height: over, align: 'top' }
+    : { axis: 'x', width: over, height: '100%', align: 'left' };
 }
 
 function captionBlock(
@@ -186,22 +227,36 @@ function filledPage(
   motion: boolean,
 ): unknown {
   const id = `photo${index}`;
+  const pan = motion ? panFor(slide.aspect) : null;
+
   return {
     type: 'Container',
     width: '100%',
     height: '100%',
     backgroundColor: BRAND_BACKGROUND,
     items: [
-      {
-        type: 'Image',
-        id,
-        source: slide.imageUrl,
-        width: '100vw',
-        height: '100vh',
-        scale: 'best-fill',
-        align: 'center',
-        ...(motion ? { onMount: driftCommands(id) } : {}),
-      },
+      pan
+        ? {
+            // Laid out larger than the screen along the photo's long axis, and
+            // clipped to the page. Sliding it is what shows the cropped parts.
+            type: 'Image',
+            id,
+            source: slide.imageUrl,
+            width: pan.width,
+            height: pan.height,
+            scale: 'best-fill',
+            align: pan.align,
+            onMount: driftCommands(id, pan.axis),
+          }
+        : {
+            type: 'Image',
+            id,
+            source: slide.imageUrl,
+            width: '100%',
+            height: '100%',
+            scale: 'best-fill',
+            align: 'center',
+          },
       captionBlock(caption, slide.position, { onScrim: true }),
     ],
   };

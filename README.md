@@ -665,11 +665,23 @@ support until you do:
 > Alexa Developer Console → **Build** → **Interfaces** → toggle **Alexa
 > Presentation Language** on → **Save Interfaces** → rebuild the model.
 
-The photograph **fills the screen** and drifts slowly across it — a shallow zoom
-and a mostly-vertical pan over twenty seconds, reversing rather than restarting.
-A family photo on a kitchen counter should feel alive, not animated. The drift
-also does real work on a portrait photo cropped to a landscape screen: it
-gradually reveals the parts that were cut off.
+The photograph **fills the screen** and **pans slowly across it** over twenty
+seconds, reversing rather than restarting. A family photo on a kitchen counter
+should feel alive, not animated.
+
+It is a true pan, not a zoom, and the difference is structural. `best-fill`
+crops the image *inside* its component, so scaling that component only magnifies
+the crop — the parts cut off are gone and no amount of translating brings them
+back. Instead the image is laid out **half again as large along the photo's long
+axis** and slid across the screen, which is what reveals them. A portrait photo
+on a landscape screen pans down; a wide one pans sideways.
+
+Which axis depends on the photo's shape, so `group_media` records
+`display_width` and `display_height` — measured by `sharp` while making the
+display copy, which already had the numbers. **A photo with no recorded shape
+does not pan at all**: guessing crops the wrong edge off every photo in a share,
+which is worse than stillness. Run `npm run media:displays` to measure photos
+stored before this existed.
 
 The caption and a `2 of 6` marker sit on a scrim along the bottom. Large type,
 high contrast, no controls. The family photo is the hero.

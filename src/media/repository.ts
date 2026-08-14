@@ -164,6 +164,17 @@ export async function markMediaStored(
   );
 }
 
+/** The shape of the display copy, which decides which way a photo pans. */
+export async function setMediaDisplaySize(
+  db: Db,
+  input: { mediaId: string; width: number; height: number },
+): Promise<void> {
+  await db.query(
+    'UPDATE group_media SET display_width = $1, display_height = $2, updated_at = now() WHERE id = $3',
+    [input.width, input.height, input.mediaId],
+  );
+}
+
 export async function markMediaFailed(
   db: Db,
   input: { mediaId: string; status: 'download_failed' | 'storage_failed' | 'rejected'; detail: string },

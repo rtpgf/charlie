@@ -128,6 +128,7 @@ async function showStack(
       batch.items.map(async (item, index) => ({
         imageUrl: await photoUrl(item.mediaId, item.storageKey, deps, store),
         position: positionLabel(index, batch.items.length),
+        aspect: item.aspect,
       })),
     );
   } catch (error: unknown) {

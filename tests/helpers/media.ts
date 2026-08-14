@@ -63,15 +63,28 @@ export interface RecordingResizer extends ImageResizer {
   resized: number[];
 }
 
-/** Pretends anything over `threshold` bytes is a camera original. */
-export function recordingResizer(threshold = 0): RecordingResizer {
+/**
+ * Pretends anything over `threshold` bytes is a camera original.
+ * Portrait by default, which is what a phone produces.
+ */
+export function recordingResizer(
+  options: { threshold?: number; width?: number; height?: number } = {},
+): RecordingResizer {
   const resized: number[] = [];
+  const width = options.width ?? 1200;
+  const height = options.height ?? 1600;
   return {
     resized,
     toDisplaySize: async (bytes) => {
-      if (bytes.byteLength <= threshold) return null;
-      resized.push(bytes.byteLength);
-      return { bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xdb]), mimeType: 'image/jpeg' };
+      const needsResize = bytes.byteLength > (options.threshold ?? 0);
+      if (needsResize) resized.push(bytes.byteLength);
+      return {
+        bytes: needsResize ? new Uint8Array([0xff, 0xd8, 0xff, 0xdb]) : bytes,
+        mimeType: 'image/jpeg',
+        width,
+        height,
+        resized: needsResize,
+      };
     },
   };
 }

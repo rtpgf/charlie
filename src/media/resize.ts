@@ -15,10 +15,20 @@ import type { MediaStore } from './store.js';
 export interface DisplayImage {
   bytes: Uint8Array;
   mimeType: string;
+  width: number;
+  height: number;
+  /** False when the original was already small enough to serve as-is. */
+  resized: boolean;
 }
 
 export interface ImageResizer {
-  /** Null when the image is already small enough, or cannot be read. */
+  /**
+   * The copy a screen should be sent, and its shape.
+   *
+   * Null only when the image cannot be read at all. An image that needs no
+   * resizing still comes back measured, because the shape is needed to decide
+   * which way a photograph pans -- see `displayStorageKey`.
+   */
   toDisplaySize(bytes: Uint8Array): Promise<DisplayImage | null>;
 }
 
@@ -40,11 +50,21 @@ export function createSharpResizer(): ImageResizer {
       // resize an image should pay to load it.
       const { default: sharp } = await import('sharp');
       const image = sharp(Buffer.from(bytes), { failOn: 'error' });
-      const { width, height } = await image.metadata();
-      if (!width || !height) return null;
-      if (width <= DISPLAY_MAX_EDGE && height <= DISPLAY_MAX_EDGE) return null;
+      const meta = await image.metadata();
+      if (!meta.width || !meta.height) return null;
 
-      const resized = await image
+      // EXIF orientation is applied on resize, so a photo the camera recorded
+      // sideways reports the shape it will actually be displayed at.
+      const upright = (meta.orientation ?? 1) >= 5;
+      const width = upright ? meta.height : meta.width;
+      const height = upright ? meta.width : meta.height;
+
+      if (width <= DISPLAY_MAX_EDGE && height <= DISPLAY_MAX_EDGE) {
+        return { bytes, mimeType: `image/${meta.format}`, width, height, resized: false };
+      }
+
+      const scale = DISPLAY_MAX_EDGE / Math.max(width, height);
+      const output = await image
         .rotate() // Honour EXIF orientation before the tag is dropped.
         .resize({
           width: DISPLAY_MAX_EDGE,
@@ -55,7 +75,13 @@ export function createSharpResizer(): ImageResizer {
         .jpeg({ quality: 82, mozjpeg: true })
         .toBuffer();
 
-      return { bytes: new Uint8Array(resized), mimeType: 'image/jpeg' };
+      return {
+        bytes: new Uint8Array(output),
+        mimeType: 'image/jpeg',
+        width: Math.round(width * scale),
+        height: Math.round(height * scale),
+        resized: true,
+      };
     },
   };
 }
@@ -72,9 +98,11 @@ export async function storeDisplayCopy(input: {
   bytes: Uint8Array;
   store: MediaStore;
   resizer: ImageResizer;
-}): Promise<boolean> {
+}): Promise<{ stored: boolean; width: number; height: number } | null> {
   const display = await input.resizer.toDisplaySize(input.bytes);
-  if (!display) return false;
-  await input.store.put(displayStorageKey(input.storageKey), display.bytes, display.mimeType);
-  return true;
+  if (!display) return null;
+  if (display.resized) {
+    await input.store.put(displayStorageKey(input.storageKey), display.bytes, display.mimeType);
+  }
+  return { stored: display.resized, width: display.width, height: display.height };
 }

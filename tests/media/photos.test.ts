@@ -317,13 +317,14 @@ describe('the photo document itself', () => {
   const CAPTION = 'Jenna: Natalie at the beach!';
 
   /** A share of `count` photos, the way the handler builds one. */
-  function stack(count: number, fit?: 'contain' | 'cover') {
+  function stack(count: number, fit?: 'contain' | 'cover', aspect: number | null = 0.75) {
     return {
       caption: CAPTION,
       ...(fit ? { fit } : {}),
       slides: Array.from({ length: count }, (_, index) => ({
         imageUrl: `https://example.test/media/photo${index}`,
         position: count > 1 ? `${index + 1} of ${count}` : undefined,
+        aspect,
       })),
     };
   }
@@ -395,6 +396,21 @@ describe('the photo document itself', () => {
     expect(document).toContain('"repeatMode":"reverse"');
   });
 
+  /** The first Image component in the document. */
+  function findImage(value: unknown): Record<string, unknown> {
+    const found: Record<string, unknown>[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!node || typeof node !== 'object') return;
+      const record = node as Record<string, unknown>;
+      if (record['type'] === 'Image') found.push(record);
+      Object.values(record).forEach(walk);
+    };
+    walk(value);
+    expect(found.length).toBeGreaterThan(0);
+    return found[0]!;
+  }
+
   /** The one transform animation in the document, whatever it is nested in. */
   function findAnimation(value: unknown): Record<string, unknown> {
     const found: Record<string, unknown>[] = [];
@@ -435,16 +451,55 @@ describe('the photo document itself', () => {
     for (const offset of offsets) expect(offset).toMatch(/^-?\d+(\.\d+)?(%|dp|px)$/);
   });
 
-  it('keeps the pan inside the headroom the zoom creates', () => {
-    // Panning further than the zoom allows slides the photo off its own edge
-    // and shows the background through the gap.
-    const animation = findAnimation(photoDocument(stack(1)));
-    const to = animation['to'] as Record<string, unknown>[];
-    const zoom = to.find((step) => 'scale' in step)!['scale'] as number;
-    const pan = Math.abs(Number(String(to.find((step) => 'translateY' in step)!['translateY'])
-      .replace('%', '')));
+  it('pans a tall photograph down its long side', () => {
+    const document = photoDocument(stack(1, 'cover', 0.75));
+    const image = findImage(document);
 
-    expect(pan).toBeLessThanOrEqual(((zoom - 1) / 2) * 100);
+    // Laid out taller than the screen, anchored at the top, then slid down --
+    // which is what shows the parts a landscape screen crops away. Scaling
+    // instead would only magnify the crop.
+    expect(image['height']).toBe('150%');
+    expect(image['width']).toBe('100%');
+    expect(image['align']).toBe('top');
+    expect(findAnimation(document)['to']).toEqual([{ translateY: '-30%' }]);
+  });
+
+  it('pans a wide photograph across it', () => {
+    const document = photoDocument(stack(1, 'cover', 1.78));
+    const image = findImage(document);
+
+    expect(image['width']).toBe('150%');
+    expect(image['height']).toBe('100%');
+    expect(image['align']).toBe('left');
+    expect(findAnimation(document)['to']).toEqual([{ translateX: '-30%' }]);
+  });
+
+  it('never travels further than the photograph hangs off the screen', () => {
+    // Panning past the overscan slides the photo off its own edge and shows
+    // the background through the gap.
+    for (const aspect of [0.75, 1.78]) {
+      const image = findImage(photoDocument(stack(1, 'cover', aspect)));
+      const overscan = Number(
+        String(image['width'] === '100%' ? image['height'] : image['width']).replace('%', ''),
+      );
+      const to = (findAnimation(photoDocument(stack(1, 'cover', aspect)))['to'] as Record<
+        string,
+        unknown
+      >[])[0]!;
+      const travel = Math.abs(Number(String(Object.values(to)[0]).replace('%', '')));
+
+      expect(travel).toBeLessThanOrEqual(((overscan - 100) / overscan) * 100);
+    }
+  });
+
+  it('holds an unmeasured photograph still rather than guessing which way it pans', () => {
+    // A wrong guess crops the wrong edge off every photo in the share, which
+    // is worse than stillness. Photos stored before shapes were recorded have
+    // no measurement at all.
+    const document = JSON.stringify(photoDocument(stack(2, 'cover', null)));
+
+    expect(document).not.toContain('AnimateItem');
+    expect(document).not.toContain('150%');
   });
 
   it('holds still when motion is turned off', () => {

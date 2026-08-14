@@ -9,6 +9,7 @@
  */
 import { config } from '../config.js';
 import { closePool, getPool } from '../db/index.js';
+import { setMediaDisplaySize } from '../media/repository.js';
 import { createSharpResizer, displayStorageKey, storeDisplayCopy } from '../media/resize.js';
 import { createSupabaseMediaStore } from '../media/store.js';
 import { logger } from '../logger.js';
@@ -26,7 +27,7 @@ async function main(): Promise<void> {
   const resizer = createSharpResizer();
 
   const stored = await db.query(
-    `SELECT id, storage_key FROM group_media
+    `SELECT id, storage_key, display_width FROM group_media
       WHERE status = 'stored' AND storage_key IS NOT NULL
       ORDER BY shared_at ASC`,
   );
@@ -38,24 +39,35 @@ async function main(): Promise<void> {
   for (const row of stored.rows) {
     const mediaId = row['id'] as string;
     const storageKey = row['storage_key'] as string;
-    try {
-      await store.get(displayStorageKey(storageKey));
-      skipped += 1;
-      continue;
-    } catch {
-      // No display copy yet, which is the whole point of this command.
+
+    // A photo with both a display copy and a recorded shape needs nothing. The
+    // shape is checked too, so photos from before it was recorded are measured
+    // rather than skipped for having a copy already.
+    if (row['display_width']) {
+      try {
+        await store.get(displayStorageKey(storageKey));
+        skipped += 1;
+        continue;
+      } catch {
+        // No display copy despite a recorded shape: fall through and make one.
+      }
     }
 
     try {
       const original = await store.get(storageKey);
-      const resized = await storeDisplayCopy({ storageKey, bytes: original.bytes, store, resizer });
-      if (resized) {
-        made += 1;
-        logger.info('display copy made', { mediaId });
-      } else {
-        skipped += 1;
-        logger.info('display copy not needed', { mediaId });
+      const display = await storeDisplayCopy({ storageKey, bytes: original.bytes, store, resizer });
+      if (!display) {
+        failed += 1;
+        logger.error('could not read the photo', { mediaId });
+        continue;
       }
+      await setMediaDisplaySize(db, { mediaId, width: display.width, height: display.height });
+      made += 1;
+      logger.info('display copy ready', {
+        mediaId,
+        resized: display.stored,
+        shape: `${display.width}x${display.height}`,
+      });
     } catch (error: unknown) {
       failed += 1;
       logger.error('display copy failed', {
