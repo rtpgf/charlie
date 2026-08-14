@@ -25,6 +25,12 @@ export default defineConfig({
       // cannot change which URL the APL document is built with.
       PUBLIC_BASE_URL: '',
       MEDIA_LINK_SECRET: '',
+      // Presentation is a matter of taste, and a developer is entitled to their
+      // own in .env. Pinned so their taste cannot fail the suite: empty means
+      // the code's own defaults, and the voice is fixed so it can be asserted.
+      ALEXA_VOICE: 'Matthew',
+      ALEXA_PHOTO_FIT: '',
+      ALEXA_PHOTO_MOTION: '',
       // Normal tests never call a provider: extractors are injected as fakes.
       ANTHROPIC_API_KEY: '',
     },

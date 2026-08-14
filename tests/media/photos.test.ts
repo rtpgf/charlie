@@ -395,6 +395,58 @@ describe('the photo document itself', () => {
     expect(document).toContain('"repeatMode":"reverse"');
   });
 
+  /** The one transform animation in the document, whatever it is nested in. */
+  function findAnimation(value: unknown): Record<string, unknown> {
+    const found: Record<string, unknown>[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!node || typeof node !== 'object') return;
+      const record = node as Record<string, unknown>;
+      if (record['property'] === 'transform') found.push(record);
+      Object.values(record).forEach(walk);
+    };
+    walk(value);
+    expect(found.length).toBeGreaterThan(0);
+    return found[0]!;
+  }
+
+  it('translates in units APL accepts inside a transform', () => {
+    // vw/vh are fine for width and height, and are NOT dimensions translateX
+    // and translateY accept -- those take dp/px or a percentage of the
+    // component. One bad entry drops the entire transform, so the photo just
+    // sits there with nothing reported on the device or in the logs.
+    const document = photoDocument(stack(2));
+    const offsets: string[] = [];
+
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) return value.forEach(walk);
+      if (!value || typeof value !== 'object') return;
+      for (const [key, nested] of Object.entries(value)) {
+        if ((key === 'translateX' || key === 'translateY') && typeof nested === 'string') {
+          offsets.push(nested);
+        }
+        walk(nested);
+      }
+    };
+    walk(document);
+
+    expect(offsets.length).toBeGreaterThan(0);
+    expect(offsets.filter((offset) => /v[hw]$/.test(offset))).toEqual([]);
+    for (const offset of offsets) expect(offset).toMatch(/^-?\d+(\.\d+)?(%|dp|px)$/);
+  });
+
+  it('keeps the pan inside the headroom the zoom creates', () => {
+    // Panning further than the zoom allows slides the photo off its own edge
+    // and shows the background through the gap.
+    const animation = findAnimation(photoDocument(stack(1)));
+    const to = animation['to'] as Record<string, unknown>[];
+    const zoom = to.find((step) => 'scale' in step)!['scale'] as number;
+    const pan = Math.abs(Number(String(to.find((step) => 'translateY' in step)!['translateY'])
+      .replace('%', '')));
+
+    expect(pan).toBeLessThanOrEqual(((zoom - 1) / 2) * 100);
+  });
+
   it('holds still when motion is turned off', () => {
     const document = JSON.stringify(photoDocument({ ...stack(2), motion: false }));
 

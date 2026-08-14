@@ -60,8 +60,17 @@ const MATTE_PADDING = '14dp';
  * landscape screen gradually reveals the parts that were cut off.
  */
 const DRIFT_MS = 20_000;
-const DRIFT_FROM = [{ scale: 1.0 }, { translateY: '0vh' }];
-const DRIFT_TO = [{ scale: 1.16 }, { translateY: '-4vh' }];
+/**
+ * Percentages, never viewport units. `translateX`/`translateY` take absolute
+ * dimensions (`20dp`, `10px`) or a percentage of the *component*; a `vh` value
+ * is not a dimension APL accepts here, and one invalid entry drops the whole
+ * transform -- so the photo simply sits there, with nothing reported anywhere.
+ *
+ * The pan stays inside the headroom the zoom creates: at 1.18 there is 9% of
+ * the height spare at each edge, so 8% of travel never exposes an edge.
+ */
+const DRIFT_FROM = [{ scale: 1.0 }, { translateY: '0%' }];
+const DRIFT_TO = [{ scale: 1.18 }, { translateY: '-8%' }];
 
 /**
  * How a photo meets the screen.
