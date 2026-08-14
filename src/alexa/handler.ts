@@ -2,11 +2,15 @@ import type { RequestEnvelope, ResponseEnvelope } from 'ask-sdk-model';
 
 import type { Db } from '../db/index.js';
 import { answerWhoIs, resolveHousehold } from '../group/service.js';
+import { describeAgenda, getEventsForLocalDate } from '../knowledge/agenda.js';
+import { findHouseholdTimezone } from '../knowledge/repository.js';
+import { instantToLocalDate } from '../knowledge/timezone.js';
 import { logger } from '../logger.js';
 import {
   goodbye,
   helpMessage,
   launchGreeting,
+  missingAgendaDate,
   missingPersonName,
   unrecognizedAccount,
   unsupportedRequest,
@@ -19,6 +23,9 @@ export interface HandlerDeps {
 
 /** The slot carrying the person being asked about in WhoIsPersonIntent. */
 const PERSON_NAME_SLOT = 'personName';
+
+/** AMAZON.DATE slot on AgendaForDateIntent; Alexa normalizes it for us. */
+const DATE_SLOT = 'date';
 
 /**
  * Routes an Alexa request envelope to the service that answers it.
@@ -45,6 +52,9 @@ export async function handleAlexaRequest(
       switch (request.intent.name) {
         case 'WhoIsPersonIntent':
           return handleWhoIsPerson(envelope, deps);
+
+        case 'AgendaForDateIntent':
+          return handleAgendaForDate(envelope, deps);
 
         case 'AMAZON.HelpIntent':
           return speak(helpMessage(), { keepSessionOpen: true });
@@ -76,22 +86,77 @@ async function handleWhoIsPerson(
     return speak(missingPersonName(), { keepSessionOpen: true });
   }
 
-  const alexaUserId = alexaUserIdOf(envelope);
-  if (!alexaUserId) {
-    logger.warn('alexa request carried no user id');
-    return speak(unrecognizedAccount());
-  }
-
-  const householdId = await resolveHousehold(deps.db, alexaUserId);
-  if (!householdId) {
-    // The id is logged here, and only here, because mapping a new device to a
-    // household is a manual development step. See README "Alexa user mapping".
-    logger.warn('no household mapped for alexa user', { alexaUserId });
-    return speak(unrecognizedAccount());
-  }
+  const householdId = await householdFor(envelope, deps);
+  if (!householdId) return speak(unrecognizedAccount());
 
   const answer = await answerWhoIs(deps.db, householdId, spokenName);
   return speak(answer, { cardTitle: 'Charlie' });
+}
+
+/**
+ * "What's happening tomorrow?"
+ *
+ * Alexa's AMAZON.DATE slot already normalizes "tomorrow" / "today" / "next
+ * Friday" to a calendar date, so no model is needed to read the question, and
+ * none is used to answer it.
+ */
+async function handleAgendaForDate(
+  envelope: RequestEnvelope,
+  deps: HandlerDeps,
+): Promise<ResponseEnvelope> {
+  const request = envelope.request;
+  if (request.type !== 'IntentRequest') return speak(unsupportedRequest());
+
+  const householdId = await householdFor(envelope, deps);
+  if (!householdId) return speak(unrecognizedAccount());
+
+  const timezone = await findHouseholdTimezone(deps.db, householdId);
+  const todayLocalDate = instantToLocalDate(new Date(), timezone);
+
+  // Alexa also returns week ("2026-W33") and month ("2026-08") forms; only a
+  // single day is supported, and anything else is declined rather than guessed.
+  const slotValue = request.intent.slots?.[DATE_SLOT]?.value?.trim();
+  const localDate = slotValue && /^\d{4}-\d{2}-\d{2}$/.test(slotValue) ? slotValue : undefined;
+
+  if (!localDate) {
+    if (slotValue) logger.warn('unsupported date slot granularity', { slotValue });
+    // With no usable date, default to today rather than asking again.
+    const events = await getEventsForLocalDate(deps.db, {
+      householdId,
+      timezone,
+      localDate: todayLocalDate,
+    });
+    return speak(
+      slotValue
+        ? missingAgendaDate()
+        : describeAgenda(events, { localDate: todayLocalDate, todayLocalDate, timezone }),
+      { cardTitle: 'Charlie' },
+    );
+  }
+
+  const events = await getEventsForLocalDate(deps.db, { householdId, timezone, localDate });
+  return speak(describeAgenda(events, { localDate, todayLocalDate, timezone }), {
+    cardTitle: 'Charlie',
+  });
+}
+
+/** Resolves the Alexa account to a group, logging the id only when unmapped. */
+async function householdFor(
+  envelope: RequestEnvelope,
+  deps: HandlerDeps,
+): Promise<string | null> {
+  const alexaUserId = alexaUserIdOf(envelope);
+  if (!alexaUserId) {
+    logger.warn('alexa request carried no user id');
+    return null;
+  }
+  const householdId = await resolveHousehold(deps.db, alexaUserId);
+  if (!householdId) {
+    // Logged here, and only here, because mapping a new device to a group is a
+    // manual development step. See README "Alexa user mapping".
+    logger.warn('no household mapped for alexa user', { alexaUserId });
+  }
+  return householdId;
 }
 
 function alexaUserIdOf(envelope: RequestEnvelope): string | undefined {

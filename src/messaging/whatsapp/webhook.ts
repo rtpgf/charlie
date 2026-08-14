@@ -4,6 +4,7 @@ import { config } from '../../config.js';
 import type { Db } from '../../db/index.js';
 import { logger } from '../../logger.js';
 import { ingestInboundMessage } from '../service.js';
+import type { KnowledgeExtractor } from '../../knowledge/types.js';
 import type { Messenger } from '../types.js';
 import { parseWhatsAppWebhook } from './parse.js';
 import { verifySignature, verifySubscription } from './verify.js';
@@ -21,6 +22,7 @@ import { verifySignature, verifySubscription } from './verify.js';
 export interface WhatsAppWebhookDeps {
   db: Db;
   messenger?: Messenger | undefined;
+  extractor?: KnowledgeExtractor | undefined;
 }
 
 export function createWhatsAppWebhookRouter(deps: WhatsAppWebhookDeps): Router {

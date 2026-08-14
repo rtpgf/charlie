@@ -33,6 +33,14 @@ export const config = {
     /** WhatsApp sender (wa_id / phone) mapped to Jenna by the seed. */
     whatsappSenderId: process.env.DEV_WHATSAPP_SENDER_ID || undefined,
   },
+  ai: {
+    /** Only 'anthropic' is implemented; the seam is KnowledgeExtractor. */
+    provider: process.env.AI_PROVIDER || 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY || undefined,
+    model: process.env.ANTHROPIC_MODEL || 'claude-opus-5',
+    /** Extraction is a small task; low keeps webhook handling prompt. */
+    effort: (process.env.AI_EFFORT || 'low') as 'low' | 'medium' | 'high',
+  },
   whatsapp: {
     /** Shared with Meta at subscription time; echoes back hub.challenge. */
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || undefined,

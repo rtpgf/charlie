@@ -15,9 +15,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "tsx src/bin/db.ts migrate",
-    "db:seed": "tsx src/bin/db.ts seed"
+    "db:seed": "tsx src/bin/db.ts seed",
+    "knowledge:reprocess": "tsx src/bin/knowledge.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "@electric-sql/pglite": "^0.5.5",
     "ask-sdk-core": "^2.14.0",
     "ask-sdk-express-adapter": "^2.14.0",

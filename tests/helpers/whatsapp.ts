@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 
-import type { Messenger } from '../../src/messaging/types.js';
+import { OutboundMessageError, type Messenger } from '../../src/messaging/types.js';
 
 /** Values the test suite shares with vitest.config.ts. */
 export const TEST_APP_SECRET = 'test-app-secret';
@@ -13,7 +13,7 @@ export function signBody(rawBody: string, appSecret = TEST_APP_SECRET): string {
   return `sha256=${createHmac('sha256', appSecret).update(rawBody, 'utf8').digest('hex')}`;
 }
 
-interface TextMessageOptions {
+export interface TextMessageOptions {
   from?: string;
   messageId?: string;
   body?: string;
@@ -126,5 +126,19 @@ export function recordingMessenger(): RecordingMessenger {
 export function failingMessenger(): Messenger {
   return {
     sendText: () => Promise.reject(new Error('WhatsApp send failed with status 500')),
+  };
+}
+
+/** Simulates Meta rejecting an expired or invalid access token. */
+export function expiredCredentialMessenger(): Messenger {
+  return {
+    sendText: () =>
+      Promise.reject(
+        new OutboundMessageError('WhatsApp send failed with status 401', {
+          category: 'authentication',
+          httpStatus: 401,
+          providerCode: 190,
+        }),
+      ),
   };
 }

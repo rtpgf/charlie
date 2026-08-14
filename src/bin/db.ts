@@ -26,6 +26,12 @@ async function main(): Promise<void> {
         alexaUserId: config.dev.alexaUserId,
         whatsappSenderId: config.dev.whatsappSenderId,
       });
+      if (result.ingestedRowsRemoved > 0) {
+        logger.warn('seed removed previously ingested data', {
+          messagesRemoved: result.ingestedRowsRemoved,
+          note: 'db:seed rebuilds the group, which cascades to messages and events',
+        });
+      }
       logger.info('seed complete', {
         householdId: result.householdId,
         alexaUserMapped: result.alexaUserMapped,

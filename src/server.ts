@@ -9,6 +9,8 @@ import { logger } from './logger.js';
 import type { Messenger } from './messaging/types.js';
 import { createWhatsAppMessenger } from './messaging/whatsapp/client.js';
 import { createWhatsAppWebhookRouter } from './messaging/whatsapp/webhook.js';
+import { createAnthropicExtractor } from './knowledge/providers/anthropic.js';
+import type { KnowledgeExtractor } from './knowledge/types.js';
 import { havingTrouble } from './services/speech.js';
 
 export interface ServerDeps {
@@ -17,6 +19,8 @@ export interface ServerDeps {
   db?: Db;
   /** Defaults to the WhatsApp client when Meta credentials are configured. */
   messenger?: Messenger | undefined;
+  /** Defaults to the configured AI provider. Absent means no extraction. */
+  extractor?: KnowledgeExtractor | undefined;
 }
 
 /** Only built when Meta credentials are present; WhatsApp stays optional. */
@@ -26,10 +30,25 @@ function defaultMessenger(): Messenger | undefined {
   return createWhatsAppMessenger({ accessToken, phoneNumberId, graphApiVersion });
 }
 
+/**
+ * Built only when an API key is present. Charlie's Alexa features and WhatsApp
+ * transport work without it; knowledge extraction is the only thing that stops.
+ */
+function defaultExtractor(): KnowledgeExtractor | undefined {
+  const { provider, apiKey, model, effort } = config.ai;
+  if (!apiKey) return undefined;
+  if (provider !== 'anthropic') {
+    logger.warn('unknown AI_PROVIDER, knowledge extraction disabled', { provider });
+    return undefined;
+  }
+  return createAnthropicExtractor({ apiKey, model, effort });
+}
+
 export function createServer(deps: ServerDeps = {}): Express {
   const app = express();
   const db: Db = deps.db ?? { query: (text, params) => getPool().query(text, params) };
   const messenger = deps.messenger ?? defaultMessenger();
+  const extractor = 'extractor' in deps ? deps.extractor : defaultExtractor();
 
   app.disable('x-powered-by');
 
@@ -37,7 +56,7 @@ export function createServer(deps: ServerDeps = {}): Express {
     res.json({ status: 'ok', service: 'weekend-charlie' });
   });
 
-  app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({ db, messenger }));
+  app.use('/webhooks/whatsapp', createWhatsAppWebhookRouter({ db, messenger, extractor }));
 
   app.post(
     '/alexa',

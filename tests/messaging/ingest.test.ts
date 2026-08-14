@@ -141,7 +141,7 @@ describe('unknown sender', () => {
 
     const people = await db.query('SELECT count(*)::int AS count FROM person');
     const contacts = await db.query('SELECT count(*)::int AS count FROM person_contact');
-    expect(people.rows[0]!['count']).toBe(4);
+    expect(people.rows[0]!['count']).toBe(5);
     expect(contacts.rows[0]!['count']).toBe(1);
   });
 

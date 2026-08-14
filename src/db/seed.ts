@@ -3,6 +3,9 @@ import { normalizePhoneIdentity } from '../messaging/types.js';
 
 export const HOUSEHOLD_NAME = 'Weekend Charlie';
 
+/** Relative dates in messages resolve against this. */
+export const HOUSEHOLD_TIMEZONE = 'America/Chicago';
+
 /** Provenance for everything this seed writes. */
 const SOURCE_TYPE = 'seed';
 const CONFIDENCE = 'confirmed';
@@ -14,24 +17,62 @@ interface SeedPerson {
   /** Only ever set from an explicit statement -- never inferred from a name. */
   gender: 'female' | 'male' | null;
   aliases: string[];
+  /** Authorization, independent of any relationship in the group model. */
+  role: 'admin' | 'member';
+  /** Whether Charlie may learn from this person's messages. */
+  ingestionStatus: 'allowed' | 'blocked' | 'pending';
 }
 
 const PEOPLE: SeedPerson[] = [
-  { key: 'jenna', fullName: null, preferredName: 'Jenna', gender: 'female', aliases: [] },
-  { key: 'hannah', fullName: null, preferredName: 'Hannah', gender: 'female', aliases: [] },
+  {
+    key: 'jenna',
+    fullName: null,
+    preferredName: 'Jenna',
+    gender: 'female',
+    aliases: [],
+    role: 'admin',
+    ingestionStatus: 'allowed',
+  },
+  {
+    key: 'hannah',
+    fullName: null,
+    preferredName: 'Hannah',
+    gender: 'female',
+    aliases: [],
+    role: 'member',
+    ingestionStatus: 'allowed',
+  },
   {
     key: 'natalie',
     fullName: 'Natalie Rose',
     preferredName: 'Natalie',
     gender: 'female',
     aliases: ['Natalie Rose'],
+    role: 'member',
+    ingestionStatus: 'pending',
   },
   {
     key: 'jt',
     fullName: 'James Thomas',
     preferredName: 'JT',
     gender: 'male',
-    aliases: ['JT', 'James', 'James Thomas'],
+    // Includes how speech-to-text is likely to transcribe "JT". Phonetic
+    // variants live here, per person, so adding a group member never requires
+    // editing the Alexa interaction model.
+    aliases: ['JT', 'James', 'James Thomas', 'Jay Tee', 'Jay T'],
+    role: 'member',
+    ingestionStatus: 'pending',
+  },
+  // A clearly fictional member for exercising the blocked path. Deliberately
+  // not related to anyone: group membership is not kinship.
+  {
+    key: 'testMember',
+    fullName: 'Test Member',
+    preferredName: 'Test Member',
+    gender: null,
+    aliases: ['Testy'],
+    role: 'member',
+    ingestionStatus: 'blocked',
   },
 ];
 
@@ -46,6 +87,9 @@ export interface SeedResult {
   householdId: string;
   alexaUserMapped: boolean;
   whatsappSenderMapped: boolean;
+  /** Ingested messages destroyed by rebuilding the group. Seed data is
+   *  idempotent; real messages and anything learned from them are not. */
+  ingestedRowsRemoved: number;
 }
 
 /** The seeded group member a development WhatsApp sender is mapped to. */
@@ -59,12 +103,21 @@ export async function seedWeekendCharlie(
   db: Db,
   options: { alexaUserId?: string | undefined; whatsappSenderId?: string | undefined } = {},
 ): Promise<SeedResult> {
-  // Cascades through people, aliases, relationships and the Alexa mapping.
+  // Cascades through people, aliases, relationships, the Alexa mapping -- and
+  // any ingested messages, extractions and events belonging to this group.
+  const existing = await db.query(
+    `SELECT count(*)::int AS count FROM group_message m
+       JOIN household h ON h.id = m.household_id WHERE h.name = $1`,
+    [HOUSEHOLD_NAME],
+  );
+  const ingestedRowsRemoved = (existing.rows[0]?.['count'] as number | undefined) ?? 0;
+
   await db.query('DELETE FROM household WHERE name = $1', [HOUSEHOLD_NAME]);
 
-  const household = await db.query('INSERT INTO household (name) VALUES ($1) RETURNING id', [
-    HOUSEHOLD_NAME,
-  ]);
+  const household = await db.query(
+    'INSERT INTO household (name, timezone) VALUES ($1, $2) RETURNING id',
+    [HOUSEHOLD_NAME, HOUSEHOLD_TIMEZONE],
+  );
   const householdId = household.rows[0]!['id'] as string;
 
   const personIds = new Map<string, string>();
@@ -83,6 +136,12 @@ export async function seedWeekendCharlie(
         alias,
       ]);
     }
+
+    await db.query(
+      `INSERT INTO group_membership (household_id, person_id, role, ingestion_status)
+       VALUES ($1, $2, $3, $4)`,
+      [householdId, personId, person.role, person.ingestionStatus],
+    );
   }
 
   for (const relationship of RELATIONSHIPS) {
@@ -126,5 +185,6 @@ export async function seedWeekendCharlie(
     householdId,
     alexaUserMapped: Boolean(options.alexaUserId),
     whatsappSenderMapped: Boolean(whatsappSenderId),
+    ingestedRowsRemoved,
   };
 }

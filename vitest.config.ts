@@ -21,6 +21,8 @@ export default defineConfig({
       WHATSAPP_ACCESS_TOKEN: '',
       WHATSAPP_PHONE_NUMBER_ID: '',
       DEV_WHATSAPP_SENDER_ID: '',
+      // Normal tests never call a provider: extractors are injected as fakes.
+      ANTHROPIC_API_KEY: '',
     },
   },
 });

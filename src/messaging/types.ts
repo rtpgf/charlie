@@ -37,6 +37,39 @@ export interface Messenger {
   sendText(toExternalId: string, text: string): Promise<void>;
 }
 
+/**
+ * Why an outbound send failed. Distinguishing an expired credential from a
+ * network blip matters: an expired token produces a deceptive partial failure
+ * where inbound ingestion keeps working and only replies stop.
+ */
+export type OutboundFailureCategory =
+  | 'authentication'
+  | 'rate_limit'
+  | 'provider_error'
+  | 'network'
+  | 'unknown';
+
+export class OutboundMessageError extends Error {
+  readonly category: OutboundFailureCategory;
+  readonly httpStatus?: number | undefined;
+  readonly providerCode?: string | number | undefined;
+
+  constructor(
+    message: string,
+    details: {
+      category: OutboundFailureCategory;
+      httpStatus?: number | undefined;
+      providerCode?: string | number | undefined;
+    },
+  ) {
+    super(message);
+    this.name = 'OutboundMessageError';
+    this.category = details.category;
+    this.httpStatus = details.httpStatus;
+    this.providerCode = details.providerCode;
+  }
+}
+
 /** Digits only -- WhatsApp wa_ids carry no '+' or separators. */
 export function normalizePhoneIdentity(value: string): string {
   return value.replace(/\D/g, '');

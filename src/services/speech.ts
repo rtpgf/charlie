@@ -21,7 +21,15 @@ export function unrecognizedAccount(): string {
 }
 
 export function helpMessage(): string {
-  return 'You can ask me about someone in the family. Try asking, who is Natalie?';
+  return (
+    'You can ask me about someone in the family, or about what is happening on a day. ' +
+    'Try asking, who is Natalie? Or, what is happening tomorrow?'
+  );
+}
+
+/** The agenda question arrived without a day Alexa could resolve. */
+export function missingAgendaDate(): string {
+  return "Sorry, I didn't catch which day you meant.";
 }
 
 export function goodbye(): string {

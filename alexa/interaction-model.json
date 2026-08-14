@@ -8,11 +8,26 @@
         }
       },
       "intents": [
-        { "name": "AMAZON.CancelIntent", "samples": [] },
-        { "name": "AMAZON.HelpIntent", "samples": [] },
-        { "name": "AMAZON.StopIntent", "samples": [] },
-        { "name": "AMAZON.NavigateHomeIntent", "samples": [] },
-        { "name": "AMAZON.FallbackIntent", "samples": [] },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
         {
           "name": "WhoIsPersonIntent",
           "slots": [
@@ -30,15 +45,29 @@
             "what do you know about {personName}",
             "about {personName}"
           ]
-        }
-      ],
-      "types": [
+        },
         {
-          "name": "AMAZON.FirstName",
-          "values": [
-            { "name": { "value": "JT", "synonyms": ["J T", "J.T.", "Jay Tee"] } },
-            { "name": { "value": "James Thomas" } },
-            { "name": { "value": "Natalie Rose" } }
+          "name": "AgendaForDateIntent",
+          "slots": [
+            {
+              "name": "date",
+              "type": "AMAZON.DATE"
+            }
+          ],
+          "samples": [
+            "what's happening {date}",
+            "what is happening {date}",
+            "what's going on {date}",
+            "what am I doing {date}",
+            "what do we have {date}",
+            "what do I have {date}",
+            "anything happening {date}",
+            "is anything happening {date}",
+            "what are the plans for {date}",
+            "what's the plan {date}",
+            "what's on {date}",
+            "what's happening",
+            "what's going on today"
           ]
         }
       ]
