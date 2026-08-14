@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 
 import { describeRequest, handleAlexaRequest } from './alexa/handler.js';
+import type { PhotoFit } from './alexa/apl.js';
 import type { MediaLinkConfig } from './alexa/photos.js';
 import { speak } from './alexa/responses.js';
 import { verifyAlexaRequest, verifySkillId } from './alexa/verify.js';
@@ -50,6 +51,8 @@ export interface ServerDeps {
   link?: MediaLinkConfig | undefined;
   /** Makes screen-sized copies of photos. Absent means originals are served. */
   resizer?: ImageResizer | undefined;
+  /** Whole photograph, or filled screen with cropping. */
+  photoFit?: PhotoFit | undefined;
 }
 
 /** Only built when Meta credentials are present; WhatsApp stays optional. */
@@ -127,6 +130,7 @@ export function createServer(deps: ServerDeps = {}): Express {
   const analyzer = 'analyzer' in deps ? deps.analyzer : defaultAnalyzer();
   const link = 'link' in deps ? deps.link : defaultLink();
   const resizer = 'resizer' in deps ? deps.resizer : createSharpResizer();
+  const photoFit = deps.photoFit ?? config.alexa.photoFit;
 
   app.disable('x-powered-by');
 
@@ -170,7 +174,7 @@ export function createServer(deps: ServerDeps = {}): Express {
       logger.info('alexa request', describeRequest(envelope));
 
       try {
-        const response = await handleAlexaRequest(envelope, { db, narrator, store, link });
+        const response = await handleAlexaRequest(envelope, { db, narrator, store, link, photoFit });
         res.json(response);
       } catch (error: unknown) {
         // Answer in Charlie's voice instead of letting Alexa fall back to its

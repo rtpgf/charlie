@@ -665,9 +665,21 @@ support until you do:
 > Alexa Developer Console → **Build** → **Interfaces** → toggle **Alexa
 > Presentation Language** on → **Save Interfaces** → rebuild the model.
 
-The APL document is deliberately plain: one full-bleed photo, one line of
-context over a scrim, and a `2 of 6` position marker. Large type, high
-contrast, no controls. The family photo is the hero.
+The photo is matted like a print — the whole photograph, uncropped, on a white
+matte against Charlie's background (`#1C3B47`, one constant in
+[apl.ts](src/alexa/apl.ts)), with the caption and a `2 of 6` marker centred
+below it. Large type, high contrast, no controls. The family photo is the hero.
+
+Cropping is a setting, because filling the screen means cutting a face out of
+frame:
+
+| `ALEXA_PHOTO_FIT` | What the device shows                                  |
+| ----------------- | ------------------------------------------------------ |
+| `contain` (default) | The whole photograph, matted, uncropped              |
+| `cover`           | Edge to edge, cropped to fill, caption over a scrim     |
+
+It is passed per request rather than read inside the document builder, so it can
+become a per-person preference later without moving anything.
 
 Two things about it are load-bearing, and both fail the same silent way — the
 container renders and its contents do not, giving a blank screen with no error
@@ -984,6 +996,7 @@ All settings live in `.env` (see `.env.example`).
 | `PUBLIC_BASE_URL`       | _(unset)_     | Charlie's own HTTPS origin; photos are served from here       |
 | `MEDIA_LINK_SECRET`     | _(unset)_     | Signs photo links; rotating it revokes every outstanding one  |
 | `ALEXA_VOICE`           | `Matthew`     | Polly voice Charlie speaks in; `''` for the device voice       |
+| `ALEXA_PHOTO_FIT`       | `contain`     | `contain` shows the whole photo; `cover` crops it to fill      |
 | `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
 | `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |

@@ -9,6 +9,7 @@ import { findHouseholdTimezone } from '../knowledge/repository.js';
 import { instantToLocalDate } from '../knowledge/timezone.js';
 import { logger } from '../logger.js';
 import type { MediaStore } from '../media/store.js';
+import type { PhotoFit } from './apl.js';
 import type { MediaLinkConfig } from './photos.js';
 import {
   handlePhotoNavigation,
@@ -34,6 +35,8 @@ export interface HandlerDeps {
   store?: MediaStore | undefined;
   /** Serves photos from Charlie's own domain. Absent falls back to storage. */
   link?: MediaLinkConfig | undefined;
+  /** Whole photograph, or filled screen with cropping. */
+  photoFit?: PhotoFit | undefined;
 }
 
 /** The slot carrying the person being asked about in WhoIsPersonIntent. */

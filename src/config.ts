@@ -104,5 +104,14 @@ export const config = {
      * voice; the value is emitted into SSML, so keep it to a Polly voice name.
      */
     voice: process.env.ALEXA_VOICE ?? 'Matthew',
+    /**
+     * How a photo meets the screen: 'contain' shows the whole photograph,
+     * 'cover' fills the screen and crops what does not fit. A setting for now;
+     * the code path it feeds is per-request, so this can become a per-person
+     * preference without moving anything.
+     */
+    photoFit: (process.env.ALEXA_PHOTO_FIT === 'cover' ? 'cover' : 'contain') as
+      | 'contain'
+      | 'cover',
   },
 } as const;

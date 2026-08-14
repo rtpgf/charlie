@@ -17,7 +17,7 @@ import {
   startOfBatch,
 } from '../media/present.js';
 import type { MediaStore } from '../media/store.js';
-import { renderPhotoDirective, supportsApl } from './apl.js';
+import { renderPhotoDirective, supportsApl, type PhotoFit } from './apl.js';
 import { speak } from './responses.js';
 
 /**
@@ -43,6 +43,12 @@ export interface PhotoDeps {
   db: Db;
   store?: MediaStore | undefined;
   link?: MediaLinkConfig | undefined;
+  /**
+   * Whole photograph or filled screen. A setting for now, and the seam a
+   * per-person preference would sit behind later -- which is why it is passed
+   * in rather than read from configuration down in the document builder.
+   */
+  photoFit?: PhotoFit | undefined;
 }
 
 interface PhotoSession {
@@ -127,6 +133,7 @@ async function showSlide(
         imageUrl,
         caption: slideCaption(batch),
         position: positionLabel(index, batch.items.length),
+        fit: deps.photoFit,
       }),
     ],
   });

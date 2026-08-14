@@ -305,11 +305,67 @@ describe('the photo document itself', () => {
     expect(values.filter((value) => value.includes('${'))).toEqual([]);
   });
 
+  it('honours the fit chosen for the request', async () => {
+    await sharePhotos(2);
+    const envelope = intentRequest('ShowLatestPicturesIntent') as Record<string, unknown>;
+    (envelope['context'] as { System: Record<string, unknown> }).System['device'] = {
+      deviceId: 'test-device',
+      supportedInterfaces: { 'Alexa.Presentation.APL': {} },
+    };
+
+    const response = await request(createServer({ db, store, extractor: undefined, photoFit: 'cover' }))
+      .post('/alexa')
+      .send(envelope)
+      .set('Content-Type', 'application/json');
+
+    const directive = (response.body.response.directives ?? [])[0] as Record<string, unknown>;
+    expect(JSON.stringify(directive['document'])).toContain('best-fill');
+  });
+
   it('leaves out the position marker for a single photo', () => {
     const values = strings(photoDocument({ ...slide, position: undefined }));
 
     expect(values).toContain(slide.caption);
     expect(values).not.toContain('1 of 2');
+  });
+
+  it('shows the whole photograph by default, rather than cropping it', () => {
+    const values = strings(photoDocument(slide));
+
+    // A face cropped out of frame is worse than a smaller face.
+    expect(values).toContain('best-fit');
+    expect(values).not.toContain('best-fill');
+  });
+
+  it('mats the photo like a print instead of bleeding it to the edges', () => {
+    const document = JSON.stringify(photoDocument(slide));
+
+    expect(document).toContain('"type":"Frame"');
+    expect(document).toContain('#FFFFFF');
+  });
+
+  it('fills the screen when asked to, and only then', () => {
+    const values = strings(photoDocument({ ...slide, fit: 'cover' }));
+
+    expect(values).toContain('best-fill');
+    expect(values).not.toContain('best-fit');
+  });
+
+  it('paints its own background in both presentations', () => {
+    // A transparent screen borrows whatever the device is showing.
+    for (const fit of ['contain', 'cover'] as const) {
+      const document = photoDocument({ ...slide, fit });
+      const root = (document['mainTemplate'] as { items: Record<string, unknown>[] }).items[0]!;
+      expect(root['backgroundColor']).toBe('#1C3B47');
+    }
+  });
+
+  it('keeps the caption readable in both presentations', () => {
+    for (const fit of ['contain', 'cover'] as const) {
+      const values = strings(photoDocument({ ...slide, fit }));
+      expect(values).toContain(slide.caption);
+      expect(values).toContain(slide.position);
+    }
   });
 
   it('asks for no more APL than the components actually need', () => {
