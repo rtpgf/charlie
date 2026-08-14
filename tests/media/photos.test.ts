@@ -83,6 +83,10 @@ describe('showing the latest pictures', () => {
     expect(response.status).toBe(200);
     const directive = directives(response)[0] as Record<string, unknown>;
     expect(directive['type']).toBe('Alexa.Presentation.APL.RenderDocument');
+    // The photo the device will actually fetch must be in what we send it.
+    const document = JSON.stringify(directive['document']);
+    expect(document).toContain(encodeURIComponent(store.signed[0]!.key));
+    expect(document).toContain('https://');
     expect(spoken(response)).toContain('Jenna sent these');
     expect(spoken(response)).toContain('Natalie at the beach');
   });
@@ -234,13 +238,37 @@ describe('the photo document itself', () => {
     return [];
   }
 
+  const slide = {
+    imageUrl: 'https://example.test/signed/photo.jpg?token=abc',
+    caption: 'Jenna: Natalie at the beach!',
+    position: '1 of 2',
+  };
+
   it('references no resource the document does not define', () => {
     // An unresolved `@name` reaches the device as a literal string where a
     // dimension belongs, and the component fails to inflate -- a blank screen
     // with no error anywhere. Cost us an evening.
-    const unresolved = strings(photoDocument()).filter((value) => value.startsWith('@'));
+    const unresolved = strings(photoDocument(slide)).filter((value) => value.startsWith('@'));
 
     expect(unresolved).toEqual([]);
+  });
+
+  it('carries the photo and caption itself, with nothing left to resolve', () => {
+    // A `${...}` binding that does not resolve renders as empty, which on a
+    // device looks exactly like a photo that would not load. So there are none.
+    const values = strings(photoDocument(slide));
+
+    expect(values).toContain(slide.imageUrl);
+    expect(values).toContain(slide.caption);
+    expect(values).toContain(slide.position);
+    expect(values.filter((value) => value.includes('${'))).toEqual([]);
+  });
+
+  it('leaves out the position marker for a single photo', () => {
+    const values = strings(photoDocument({ ...slide, position: undefined }));
+
+    expect(values).toContain(slide.caption);
+    expect(values).not.toContain('1 of 2');
   });
 
   it('asks for no more APL than the components actually need', () => {

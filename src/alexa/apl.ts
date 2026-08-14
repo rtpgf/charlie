@@ -44,12 +44,19 @@ export interface PhotoSlide {
   position?: string | undefined;
 }
 
-export function photoDocument(): Record<string, unknown> {
+/**
+ * The document, with this slide's values written straight into it.
+ *
+ * No `datasources`, and no `${...}` bindings. Charlie builds a document per
+ * request, so the template indirection bought nothing and could only fail --
+ * a binding that does not resolve renders as empty rather than as an error,
+ * which on a device is indistinguishable from a photo that would not load.
+ */
+export function photoDocument(slide: PhotoSlide): Record<string, unknown> {
   return {
     type: 'APL',
     version: APL_DOCUMENT_VERSION,
     mainTemplate: {
-      parameters: ['payload'],
       items: [
         {
           type: 'Container',
@@ -60,7 +67,7 @@ export function photoDocument(): Record<string, unknown> {
           items: [
             {
               type: 'Image',
-              source: '${payload.slide.imageUrl}',
+              source: slide.imageUrl,
               width: '100vw',
               height: '100vh',
               // Fills the screen without distorting the photo.
@@ -83,20 +90,25 @@ export function photoDocument(): Record<string, unknown> {
               items: [
                 {
                   type: 'Text',
-                  text: '${payload.slide.caption}',
+                  text: slide.caption,
                   fontSize: '42dp',
                   fontWeight: '500',
                   color: '#FFFFFF',
                   maxLines: 2,
                 },
-                {
-                  type: 'Text',
-                  text: '${payload.slide.position}',
-                  fontSize: '30dp',
-                  color: '#D8D8D8',
-                  paddingTop: '8dp',
-                  when: '${payload.slide.position != null}',
-                },
+                // Omitted in JavaScript rather than with an APL `when`, for the
+                // same reason: one less expression to evaluate on the device.
+                ...(slide.position
+                  ? [
+                      {
+                        type: 'Text',
+                        text: slide.position,
+                        fontSize: '30dp',
+                        color: '#D8D8D8',
+                        paddingTop: '8dp',
+                      },
+                    ]
+                  : []),
               ],
             },
           ],
@@ -111,7 +123,6 @@ export function renderPhotoDirective(slide: PhotoSlide): Record<string, unknown>
   return {
     type: 'Alexa.Presentation.APL.RenderDocument',
     token: 'charlie-photo',
-    document: photoDocument(),
-    datasources: { payload: { slide } },
+    document: photoDocument(slide),
   };
 }
