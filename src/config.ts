@@ -46,6 +46,18 @@ export const config = {
      */
     narrateAgenda: process.env.AI_NARRATE_AGENDA === 'true',
   },
+  messaging: {
+    /**
+     * How Charlie acknowledges, without taking a turn in the conversation.
+     * Channel-neutral: SMS has no reactions, but the meaning is the same.
+     */
+    reactions: {
+      /** Stored successfully. */
+      saved: process.env.MESSAGING_REACTION_SAVED || '\u{1F44D}',
+      /** Received but not saved -- worth resending later. */
+      problem: process.env.MESSAGING_REACTION_PROBLEM || '\u{26A0}\u{FE0F}',
+    },
+  },
   whatsapp: {
     /** Shared with Meta at subscription time; echoes back hub.challenge. */
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || undefined,

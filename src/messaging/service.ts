@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import type { Db } from '../db/index.js';
 import { findMembership } from '../group/membership.js';
 import { learnFromMessage } from '../knowledge/service.js';
@@ -38,14 +39,12 @@ export interface MessagingDeps {
  * How Charlie acknowledges. Deliberately dumb and deterministic; no AI wrote
  * any of it.
  *
- * Success is a reaction rather than a sentence: the family thread belongs to
- * the family, and a bot replying to every message makes it feel like a support
- * channel. A failure still needs words -- a thumbs-up cannot say "I didn't save
- * that" -- so text is reserved for when something is actually wrong.
+ * Both outcomes are reactions rather than sentences. The thread belongs to the
+ * family, and during an outage a reply-per-message would fill it with bot noise
+ * exactly when things are already going wrong. A reaction takes no turn in the
+ * conversation, so an hour-long outage leaves the thread unchanged.
  */
-const ACKNOWLEDGEMENT_EMOJI = '\u{1F44D}';
 const ACKNOWLEDGEMENT_TEXT = "Got it. I've saved your message.";
-const STORAGE_FAILURE = "I'm having trouble saving that right now. Please try again later.";
 
 export async function ingestInboundMessage(
   message: InboundGroupMessage,
@@ -102,7 +101,12 @@ export async function ingestInboundMessage(
       ...logContext,
       reason: error instanceof Error ? error.message : 'unknown',
     });
-    await trySend(deps.messenger, message.senderExternalId, STORAGE_FAILURE, logContext);
+    // Never claim to have saved something that was not saved. Unlike the
+    // success path this does NOT fall back to text: an outage means every
+    // message from every person fails, and a reply each would be exactly the
+    // clutter this design exists to avoid. The diagnostic belongs in the logs,
+    // and later with admins -- not in the family's thread.
+    await tryReact(deps.messenger, message, config.messaging.reactions.problem, logContext);
     return 'storage_failed';
   }
 
@@ -153,23 +157,38 @@ async function tryAcknowledge(
   message: InboundGroupMessage,
   logContext: Record<string, unknown>,
 ): Promise<void> {
+  const reacted = await tryReact(
+    messenger,
+    message,
+    config.messaging.reactions.saved,
+    logContext,
+  );
+  if (reacted) return;
+
+  // Only the success path falls back to words: a person who sent something and
+  // gets no signal at all cannot tell Charlie apart from broken, and success is
+  // not the case where an outage is producing one failure per message.
+  await trySend(messenger, message.senderExternalId, ACKNOWLEDGEMENT_TEXT, logContext);
+}
+
+/** Returns whether the reaction was delivered. */
+async function tryReact(
+  messenger: Messenger | undefined,
+  message: InboundGroupMessage,
+  emoji: string,
+  logContext: Record<string, unknown>,
+): Promise<boolean> {
   if (!messenger) {
     logger.warn('no outbound messenger configured, skipping acknowledgement', logContext);
-    return;
+    return false;
   }
-
   try {
-    await messenger.react(
-      message.senderExternalId,
-      message.externalMessageId,
-      ACKNOWLEDGEMENT_EMOJI,
-    );
-    return;
+    await messenger.react(message.senderExternalId, message.externalMessageId, emoji);
+    return true;
   } catch (error: unknown) {
     logOutboundFailure(error, { ...logContext, acknowledgement: 'reaction' });
+    return false;
   }
-
-  await trySend(messenger, message.senderExternalId, ACKNOWLEDGEMENT_TEXT, logContext);
 }
 
 function logOutboundFailure(error: unknown, logContext: Record<string, unknown>): void {

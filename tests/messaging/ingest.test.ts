@@ -217,11 +217,22 @@ describe('failure handling', () => {
     });
 
     expect(outcome).toBe('storage_failed');
-    expect(messenger.sent).toEqual([
-      {
-        to: JENNA_WHATSAPP_ID,
-        text: "I'm having trouble saving that right now. Please try again later.",
-      },
+    // A warning mark, not a sentence: during an outage every message from every
+    // person fails, and a reply each would fill the thread with bot noise.
+    expect(messenger.reactions).toEqual([
+      { to: JENNA_WHATSAPP_ID, messageId: 'wamid.TEST-MESSAGE-1', emoji: '\u{26A0}\u{FE0F}' },
     ]);
+    expect(messenger.sent).toEqual([]);
+  });
+
+  it('never falls back to text when a failure reaction cannot be delivered', async () => {
+    const brokenDb: Db = { query: () => Promise.reject(new Error('connect ECONNREFUSED')) };
+    const { reactionUnsupportedMessenger } = await import('../helpers/whatsapp.js');
+    const messenger = reactionUnsupportedMessenger();
+
+    await ingestInboundMessage(messageFrom(textMessageWebhook()), { db: brokenDb, messenger });
+
+    // Silence is the quieter failure here -- the diagnostic is in the logs.
+    expect(messenger.sent).toEqual([]);
   });
 });

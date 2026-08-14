@@ -356,12 +356,24 @@ exercising the denial path.
 
 ## Knowledge ingestion
 
-When a message is stored, Charlie **reacts with 👍** rather than replying. The
-family thread belongs to the family, and a bot answering every message turns it
-into a support channel. Words are reserved for when something is wrong — a
-thumbs-up cannot say "I didn't save that". If the provider rejects the reaction,
-Charlie falls back to the sentence, because silence is indistinguishable from
-being broken.
+Charlie acknowledges with a **reaction**, never a reply:
+
+| | Reaction | Meaning |
+| --- | --- | --- |
+| Stored | 👍 `MESSAGING_REACTION_SAVED` | Saved. Nothing is claimed about understanding it. |
+| Not stored | ⚠️ `MESSAGING_REACTION_PROBLEM` | Received but not saved — worth resending later. |
+
+The thread belongs to the family, and a bot answering every message turns it
+into a support channel. It matters most when things go wrong: an outage means
+*every message from every person* fails, and a reply each would fill the thread
+with bot noise exactly when things are already bad. A reaction takes no turn in
+the conversation, so an hour-long outage leaves the thread unchanged.
+
+The two paths differ deliberately on fallback. **Success** falls back to the old
+sentence if the reaction cannot be delivered — someone who sent something and
+gets no signal at all cannot tell Charlie apart from broken. **Failure** never
+falls back, because that is precisely the case where one reply per message
+becomes a flood. The diagnostic lives in the logs instead.
 
 ```text
 group message (stored verbatim)
@@ -647,9 +659,8 @@ return `503` rather than accepting unverified traffic. Alexa is unaffected.
 - **Media is recognized, not retrieved.** An image logs
   `recognized unsupported inbound media message` with metadata normalized for a
   later milestone. Nothing is downloaded or stored.
-- **Storage failure never claims success.** If the database is unavailable
-  Charlie replies "I'm having trouble saving that right now" instead of
-  reacting — the reaction means *saved*, and nothing else.
+- **Storage failure never claims success.** If the database is unavailable the
+  message gets ⚠️ rather than 👍, and nothing is written to the thread.
 - **Acknowledgment failure never undoes storage.** The message stays; the send
   failure is logged.
 
@@ -743,6 +754,8 @@ All settings live in `.env` (see `.env.example`).
 | `WHATSAPP_PHONE_NUMBER_ID` | _(unset)_  | Meta phone number ID used for sending                        |
 | `WHATSAPP_GRAPH_API_VERSION` | `v26.0`  | Graph API version for outbound calls                         |
 | `DEV_WHATSAPP_SENDER_ID` | _(unset)_    | WhatsApp sender mapped to Jenna by `db:seed`                 |
+| `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
+| `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |
 | `ANTHROPIC_API_KEY`     | _(unset)_     | Absent disables extraction only                              |
 | `ANTHROPIC_MODEL`       | `claude-opus-5` | Extraction model                                           |
@@ -885,5 +898,10 @@ Noted while building, deliberately not built:
   group can ask anything.
 - **Cheaper extraction.** Extraction is a small, well-specified task and an
   obvious candidate for a smaller model later. Deliberately not optimized now.
+- **Admin alerting.** Failures are silent to the family by design, so an outage
+  is invisible until someone checks the logs. Admins (`group_membership.role`)
+  should be told — rate-limited to one alert per outage window, not one per
+  failed message, and ideally over a channel that is not the one most likely to
+  be down at the time.
 - **Ingestion permission is per-person, not per-channel.** A person allowed on
   WhatsApp would be allowed on SMS too. Splitting it is a schema change.
