@@ -357,13 +357,15 @@ describe('the photo document itself', () => {
       supportedInterfaces: { 'Alexa.Presentation.APL': {} },
     };
 
-    const response = await request(createServer({ db, store, extractor: undefined, photoFit: 'cover' }))
+    const response = await request(
+      createServer({ db, store, extractor: undefined, photoFit: 'contain' }),
+    )
       .post('/alexa')
       .send(envelope)
       .set('Content-Type', 'application/json');
 
     const directive = (response.body.response.directives ?? [])[0] as Record<string, unknown>;
-    expect(JSON.stringify(directive['document'])).toContain('best-fill');
+    expect(JSON.stringify(directive['document'])).toContain('best-fit');
   });
 
   it('leaves out the position marker for a single photo', () => {
@@ -373,26 +375,39 @@ describe('the photo document itself', () => {
     expect(values).not.toContain('1 of 1');
   });
 
-  it('shows the whole photograph by default, rather than cropping it', () => {
+  it('fills the screen by default', () => {
     const values = strings(photoDocument(stack(2)));
 
-    // A face cropped out of frame is worse than a smaller face.
-    expect(values).toContain('best-fit');
-    expect(values).not.toContain('best-fill');
-  });
-
-  it('mats the photo like a print instead of bleeding it to the edges', () => {
-    const document = JSON.stringify(photoDocument(stack(2)));
-
-    expect(document).toContain('"type":"Frame"');
-    expect(document).toContain('#FFFFFF');
-  });
-
-  it('fills the screen when asked to, and only then', () => {
-    const values = strings(photoDocument(stack(2, 'cover')));
-
+    // A matted photo is honest to the framing and, on a small Echo Show, tiny:
+    // a portrait photograph inside a landscape matte is a stamp in a field of
+    // white. Big beats uncropped on a display someone glances at from a couch.
     expect(values).toContain('best-fill');
     expect(values).not.toContain('best-fit');
+  });
+
+  it('drifts slowly across the photograph', () => {
+    const document = JSON.stringify(photoDocument(stack(2)));
+
+    expect(document).toContain('"type":"AnimateItem"');
+    expect(document).toContain('"property":"transform"');
+    // Reversing, not restarting: a snap back to the start draws the eye to the
+    // animation instead of the face.
+    expect(document).toContain('"repeatMode":"reverse"');
+  });
+
+  it('holds still when motion is turned off', () => {
+    const document = JSON.stringify(photoDocument({ ...stack(2), motion: false }));
+
+    expect(document).not.toContain('AnimateItem');
+  });
+
+  it('mats the photo when asked to, and only then', () => {
+    const matted = JSON.stringify(photoDocument(stack(2, 'contain')));
+    const filled = JSON.stringify(photoDocument(stack(2, 'cover')));
+
+    expect(matted).toContain('"type":"Frame"');
+    expect(matted).toContain('best-fit');
+    expect(filled).not.toContain('"type":"Frame"');
   });
 
   it('paints its own background in both presentations', () => {
@@ -424,14 +439,8 @@ describe('the photo document itself', () => {
     expect(JSON.stringify(photoDocument(stack(3)))).toContain('"navigation":"wrap"');
   });
 
-  it('hints at the pile only when there is more than one photograph', () => {
-    // One photo is a print, not a stack. Cards behind it would be a lie.
-    const alone = JSON.stringify(photoDocument(stack(1)));
-    const several = JSON.stringify(photoDocument(stack(3)));
-
-    expect(several).toContain('transform');
-    expect(alone).not.toContain('transform');
-    expect(alone).toContain('"navigation":"none"');
+  it('does not offer to page through a single photograph', () => {
+    expect(JSON.stringify(photoDocument(stack(1)))).toContain('"navigation":"none"');
   });
 
   it('writes each position inside its own page, so a swipe updates it', () => {

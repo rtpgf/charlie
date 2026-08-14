@@ -37,6 +37,8 @@ export interface HandlerDeps {
   link?: MediaLinkConfig | undefined;
   /** Whole photograph, or filled screen with cropping. */
   photoFit?: PhotoFit | undefined;
+  /** The slow drift across a still photograph. */
+  photoMotion?: boolean | undefined;
 }
 
 /** The slot carrying the person being asked about in WhoIsPersonIntent. */

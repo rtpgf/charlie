@@ -105,13 +105,19 @@ export const config = {
      */
     voice: process.env.ALEXA_VOICE ?? 'Matthew',
     /**
-     * How a photo meets the screen: 'contain' shows the whole photograph,
-     * 'cover' fills the screen and crops what does not fit. A setting for now;
+     * How a photo meets the screen: 'cover' fills the screen and crops what
+     * does not fit, 'contain' shows the whole photograph matted. A setting for now;
      * the code path it feeds is per-request, so this can become a per-person
      * preference without moving anything.
      */
-    photoFit: (process.env.ALEXA_PHOTO_FIT === 'cover' ? 'cover' : 'contain') as
+    photoFit: (process.env.ALEXA_PHOTO_FIT === 'contain' ? 'contain' : 'cover') as
       | 'contain'
       | 'cover',
+    /**
+     * The slow drift across a still photograph. On by default; off is a real
+     * preference, not just a taste one -- motion is a genuine accessibility
+     * concern for some people.
+     */
+    photoMotion: process.env.ALEXA_PHOTO_MOTION !== 'off',
   },
 } as const;

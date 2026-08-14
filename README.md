@@ -665,16 +665,26 @@ support until you do:
 > Alexa Developer Console → **Build** → **Interfaces** → toggle **Alexa
 > Presentation Language** on → **Save Interfaces** → rebuild the model.
 
-A share is one **stack of photographs**. The top one is matted like a print —
-the whole photograph, uncropped, on white — with the edges of the others showing
-behind it, tilted, against Charlie's background (`#1C3B47`, one constant in
-[apl.ts](src/alexa/apl.ts)). **Swipe it** and the top photo goes to the bottom of
-the pile. Large type, high contrast, no controls. The family photo is the hero.
+The photograph **fills the screen** and drifts slowly across it — a shallow zoom
+and a mostly-vertical pan over twenty seconds, reversing rather than restarting.
+A family photo on a kitchen counter should feel alive, not animated. The drift
+also does real work on a portrait photo cropped to a landscape screen: it
+gradually reveals the parts that were cut off.
 
-Touch matters more than it looks: someone who will not issue voice commands to a
-machine will happily push a photo sideways.
+The caption and a `2 of 6` marker sit on a scrim along the bottom. Large type,
+high contrast, no controls. The family photo is the hero.
 
-Three things follow from using a `Pager`:
+> **An earlier version matted each photo like a print, on a stack of tilted
+> cards.** It read as considered and it was worse. On a small Echo Show a
+> portrait photograph fitted inside a landscape matte is a stamp in a field of
+> white, and swiping slid the whole card sideways — a carousel pretending to be
+> a pile. The metaphor promised something the motion did not deliver. Chrome
+> that has to be justified is chrome that should not be there. `contain` keeps
+> the matted presentation for anyone who wants it.
+
+A share is one `Pager`, so it can be **swiped**, and that matters more than it
+looks: someone who will not issue voice commands to a machine will happily push
+a photo sideways. Three things follow:
 
 - **Every photo is sent up front**, because a Pager holds all its pages. A six
   photo share is ~1.4 MB out through the server's uplink at once.
@@ -682,19 +692,18 @@ Three things follow from using a `Pager`:
   `SetPage` command with `position: "relative"`, so it moves relative to the
   page *the device* is showing. Swiping and asking stay in sync, and Charlie
   never tracks an index for a screen.
-- **The position marker lives inside each page**, so a swipe updates it with no
-  round trip. Nothing on the server knows which photo is showing.
+- **The stack wraps.** A screenless Echo still says `"That's the last one."` —
+  looping silently with no marker to read would only be confusing.
 
-The stack wraps. A screenless Echo still says `"That's the last one."` — looping
-silently with no marker to read would only be confusing.
-
-Cropping is a setting, because filling the screen means cutting a face out of
-frame:
+Both are settings:
 
 | `ALEXA_PHOTO_FIT` | What the device shows                                  |
 | ----------------- | ------------------------------------------------------ |
-| `contain` (default) | The whole photograph, matted, uncropped              |
-| `cover`           | Edge to edge, cropped to fill, caption over a scrim     |
+| `cover` (default) | Edge to edge, cropped to fill, drifting slowly          |
+| `contain`         | The whole photograph, matted, uncropped, still          |
+
+`ALEXA_PHOTO_MOTION=off` stops the drift. Motion is a genuine accessibility
+concern for some people, so it is a setting rather than a fact.
 
 It is passed per request rather than read inside the document builder, so it can
 become a per-person preference later without moving anything.
@@ -1014,7 +1023,8 @@ All settings live in `.env` (see `.env.example`).
 | `PUBLIC_BASE_URL`       | _(unset)_     | Charlie's own HTTPS origin; photos are served from here       |
 | `MEDIA_LINK_SECRET`     | _(unset)_     | Signs photo links; rotating it revokes every outstanding one  |
 | `ALEXA_VOICE`           | `Matthew`     | Polly voice Charlie speaks in; `''` for the device voice       |
-| `ALEXA_PHOTO_FIT`       | `contain`     | `contain` shows the whole photo; `cover` crops it to fill      |
+| `ALEXA_PHOTO_FIT`       | `cover`       | `cover` fills the screen; `contain` shows the whole photo      |
+| `ALEXA_PHOTO_MOTION`    | `on`          | Slow drift across the photo; `off` holds it still              |
 | `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
 | `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |

@@ -53,6 +53,8 @@ export interface ServerDeps {
   resizer?: ImageResizer | undefined;
   /** Whole photograph, or filled screen with cropping. */
   photoFit?: PhotoFit | undefined;
+  /** The slow drift across a still photograph. */
+  photoMotion?: boolean | undefined;
 }
 
 /** Only built when Meta credentials are present; WhatsApp stays optional. */
@@ -131,6 +133,7 @@ export function createServer(deps: ServerDeps = {}): Express {
   const link = 'link' in deps ? deps.link : defaultLink();
   const resizer = 'resizer' in deps ? deps.resizer : createSharpResizer();
   const photoFit = deps.photoFit ?? config.alexa.photoFit;
+  const photoMotion = deps.photoMotion ?? config.alexa.photoMotion;
 
   app.disable('x-powered-by');
 
@@ -174,7 +177,7 @@ export function createServer(deps: ServerDeps = {}): Express {
       logger.info('alexa request', describeRequest(envelope));
 
       try {
-        const response = await handleAlexaRequest(envelope, { db, narrator, store, link, photoFit });
+        const response = await handleAlexaRequest(envelope, { db, narrator, store, link, photoFit, photoMotion });
         res.json(response);
       } catch (error: unknown) {
         // Answer in Charlie's voice instead of letting Alexa fall back to its

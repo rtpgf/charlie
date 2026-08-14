@@ -55,6 +55,8 @@ export interface PhotoDeps {
    * in rather than read from configuration down in the document builder.
    */
   photoFit?: PhotoFit | undefined;
+  /** The slow drift across a still photograph. Defaults to on. */
+  photoMotion?: boolean | undefined;
 }
 
 interface PhotoSession {
@@ -144,7 +146,12 @@ async function showStack(
     keepSessionOpen: true,
     sessionAttributes: session,
     directives: [
-      renderPhotoDirective({ slides, caption: slideCaption(batch), fit: deps.photoFit }),
+      renderPhotoDirective({
+        slides,
+        caption: slideCaption(batch),
+        fit: deps.photoFit,
+        motion: deps.photoMotion,
+      }),
     ],
   });
 }
