@@ -657,9 +657,38 @@ days, which is the real recovery window.
 from `Alexa.Presentation.APL` in `supportedInterfaces` — progressive
 enhancement, never a requirement.
 
+**APL must be switched on in the console, separately from the interaction
+model.** It is not part of `alexa/interaction-model.json`, so uploading the
+model does not enable it, and a device with a screen will report no screen
+support until you do:
+
+> Alexa Developer Console → **Build** → **Interfaces** → toggle **Alexa
+> Presentation Language** on → **Save Interfaces** → rebuild the model.
+
 The APL document is deliberately plain: one full-bleed photo, one line of
 context over a scrim, and a `2 of 6` position marker. Large type, high
 contrast, no controls. The family photo is the hero.
+
+Two things about it are load-bearing, and both fail the same silent way — the
+container renders and its contents do not, giving a blank screen with no error
+on the device, in the logs, or in the skill response:
+
+- **No `@resource` references.** A resource only resolves if the document
+  defines it or imports a package that does. An unresolved one arrives as a
+  literal string where a dimension belongs.
+- **`APL_DOCUMENT_VERSION` stays low** (`1.6`). Every component used has existed
+  since early APL, so demanding a newer runtime only excludes older devices.
+
+When the screen is blank, check the photo URL before suspecting the document:
+
+```bash
+npm run media:signed-url          # latest share
+npm run media:signed-url -- <media-id>
+```
+
+If the link opens in a browser, storage and signing are fine and the problem is
+on the device side. These are live links to private photos, short-lived and
+never logged.
 
 Navigation state lives in Alexa session attributes, not Postgres — which photo
 someone is looking at is not group knowledge, and a fresh "show me the latest

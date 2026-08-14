@@ -10,7 +10,22 @@ import type { RequestEnvelope } from 'ask-sdk-model';
  */
 
 export const APL_INTERFACE = 'Alexa.Presentation.APL';
-export const APL_DOCUMENT_VERSION = '2023.2';
+/**
+ * Pinned low on purpose. Everything here -- Container, Image, Text, absolute
+ * positioning -- has existed since early APL, so asking for a recent runtime
+ * buys nothing and excludes older Echo Shows, which fail by rendering the
+ * container and dropping its contents. A blank screen, with no error.
+ */
+export const APL_DOCUMENT_VERSION = '1.6';
+
+/**
+ * Spacing as literal dimensions, never `@resource` references.
+ *
+ * A resource reference only resolves if the document defines it or imports a
+ * package that does. An unresolved one reaches the device as the literal string
+ * where a dimension belongs, and the component silently fails to inflate.
+ */
+const EDGE_PADDING = '32dp';
 
 /** Screen support is progressive enhancement, never a requirement. */
 export function supportsApl(envelope: RequestEnvelope): boolean {
@@ -57,12 +72,13 @@ export function photoDocument(): Record<string, unknown> {
               // readable whatever the photo underneath is doing.
               type: 'Container',
               position: 'absolute',
-              bottom: '0',
+              bottom: '0dp',
+              left: '0dp',
               width: '100vw',
-              paddingLeft: '@spacingLarge',
-              paddingRight: '@spacingLarge',
-              paddingBottom: '@spacingLarge',
-              paddingTop: '@spacingLarge',
+              paddingLeft: EDGE_PADDING,
+              paddingRight: EDGE_PADDING,
+              paddingBottom: EDGE_PADDING,
+              paddingTop: EDGE_PADDING,
               backgroundColor: 'rgba(0,0,0,0.62)',
               items: [
                 {

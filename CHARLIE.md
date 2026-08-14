@@ -211,6 +211,18 @@ For example, an audio story should eventually retain:
 
 The interpretation is not a replacement for the source.
 
+### 11. Charlie is a Non-intrusive Helper
+
+Charlie should make useful things easier to discover and access without turning family interactions into opportunities to sell, nag, or demand attention. Suggestions should be contextual, relevant, and preferably prompted by an expressed need.
+
+### 12. Users Own Their Group Data 
+
+Charlie must provide authorized users a practical way to export it and permanently delete it, including derived AI knowledge and stored media. Deletion must be real, not merely hidden from the product experience.
+
+### 13 Privacy is Part of the Product
+
+Charlie never sells group data. Family messages, photos, videos, stories, relationships, and derived knowledge exist to serve the group—not advertisers or data brokers. Authorized users can export their data and permanently delete it.
+
 ## Family Canon
 
 Charlie will eventually maintain a private, provenance-aware family knowledge system called **Family Canon**.

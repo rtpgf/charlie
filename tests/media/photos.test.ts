@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 
+import { APL_DOCUMENT_VERSION, photoDocument } from '../../src/alexa/apl.js';
 import type { Db } from '../../src/db/index.js';
 import { ingestInboundMessage } from '../../src/messaging/service.js';
 import { parseWhatsAppWebhook } from '../../src/messaging/whatsapp/parse.js';
@@ -221,6 +222,30 @@ describe('asking about what is showing', () => {
     });
 
     expect(spoken(response)).toMatch(/Jenna sent it (today|yesterday|on )/);
+  });
+});
+
+describe('the photo document itself', () => {
+  /** Every string value in the document, however deeply nested. */
+  function strings(value: unknown): string[] {
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap(strings);
+    if (value && typeof value === 'object') return Object.values(value).flatMap(strings);
+    return [];
+  }
+
+  it('references no resource the document does not define', () => {
+    // An unresolved `@name` reaches the device as a literal string where a
+    // dimension belongs, and the component fails to inflate -- a blank screen
+    // with no error anywhere. Cost us an evening.
+    const unresolved = strings(photoDocument()).filter((value) => value.startsWith('@'));
+
+    expect(unresolved).toEqual([]);
+  });
+
+  it('asks for no more APL than the components actually need', () => {
+    // Older Echo Shows drop a document that demands a newer runtime.
+    expect(Number(APL_DOCUMENT_VERSION)).toBeLessThanOrEqual(1.6);
   });
 });
 
