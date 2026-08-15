@@ -676,22 +676,19 @@ back. Instead the image is laid out **half again as large along the photo's long
 axis** and slid across the screen, which is what reveals them. A portrait photo
 on a landscape screen pans down; a wide one pans sideways.
 
-**The pan is a round trip, on purpose.** APL runs commands in two modes, and in
-*fast mode* `AnimateItem` jumps straight to its end state rather than animating.
-A page change from a swipe runs in fast mode — so animating from the document
-showed a photograph frozen at the bottom of its own travel, which is worse than
-one that never moves. Commands the skill sends back with `ExecuteCommands` run
-in **normal mode**, which does animate.
+**Every animation names a `sequencer`, and that is load-bearing.** APL runs
+commands in two modes. A page change driven by a swipe runs in *fast mode*,
+where `AnimateItem` jumps straight to its end state and `SendEvent` is ignored
+outright — so the photo arrives frozen at the end of its travel, and the device
+cannot even ask the skill for help. A fast-mode command that names a sequencer
+runs in **normal mode** on that sequencer instead. Without `sequencer`, none of
+this animates.
 
-So the device reports which page it is showing (`SendEvent` with the page index
-and pan axis) and Charlie answers with the animation
-(`Alexa.Presentation.APL.UserEvent` → `ExecuteCommands`). Only the first page —
-the one already being looked at — pans on mount. The axis rides along in the
-event rather than being looked up again, so a share holding both a portrait and
-a landscape photograph pans each one correctly.
+The same sequencer is named for every page on purpose: a sequencer runs one
+command at a time, so arriving at a new photograph cancels the pan on the one
+being left rather than leaving animations running on photos nobody is watching.
 
-The event arrives from a document Charlie wrote, but it arrives over the network
-and a component id is built from it, so every field is validated.
+Only the first page pans on mount — the rest pan when they come into view.
 
 Which axis depends on the photo's shape, so `group_media` records
 `display_width` and `display_height` — measured by `sharp` while making the
@@ -1010,7 +1007,7 @@ scope — which is exactly why the expiry date is worth writing down.
 | Method | Path                  | Purpose                                       |
 | ------ | --------------------- | --------------------------------------------- |
 | `GET`  | `/health`             | `{"status":"ok","service":"weekend-charlie"}`  |
-| `POST` | `/alexa`              | Alexa Custom Skill request envelope, and APL user events |
+| `POST` | `/alexa`              | Alexa Custom Skill request envelope            |
 | `GET`  | `/webhooks/whatsapp`  | Meta webhook subscription challenge            |
 | `POST` | `/webhooks/whatsapp`  | Meta webhook message delivery                  |
 | `GET`  | `/media/:token`       | One group photo, for a signed, unexpired token |

@@ -9,7 +9,7 @@ import { findHouseholdTimezone } from '../knowledge/repository.js';
 import { instantToLocalDate } from '../knowledge/timezone.js';
 import { logger } from '../logger.js';
 import type { MediaStore } from '../media/store.js';
-import { panPhotoDirective, PAN_EVENT, type PhotoFit } from './apl.js';
+import type { PhotoFit } from './apl.js';
 import type { MediaLinkConfig } from './photos.js';
 import {
   handlePhotoNavigation,
@@ -68,9 +68,6 @@ export async function handleAlexaRequest(
       logger.debug('session ended', { reason: request.reason });
       return silent();
 
-    case 'Alexa.Presentation.APL.UserEvent':
-      return handlePresentationEvent(envelope);
-
     case 'IntentRequest':
       switch (request.intent.name) {
         case 'WhoIsPersonIntent':
@@ -115,36 +112,6 @@ export async function handleAlexaRequest(
       logger.warn('unsupported request type', { requestType: request.type });
       return speak(unsupportedRequest());
   }
-}
-
-/**
- * The screen reporting that a different photograph is showing.
- *
- * The only request that comes from the device rather than from a person, and it
- * says nothing: it starts the pan and stays out of the way. A page change runs
- * its own commands in fast mode, where an animation jumps to its end state, so
- * the animation has to come back from here to run in normal mode at all.
- *
- * Everything in the event is validated. It arrives from a document Charlie
- * wrote, but it arrives over the network, and a component id is being built
- * from it.
- */
-function handlePresentationEvent(envelope: RequestEnvelope): ResponseEnvelope {
-  const request = envelope.request as { arguments?: unknown[] };
-  const [name, index, axis] = request.arguments ?? [];
-
-  if (
-    name !== PAN_EVENT ||
-    typeof index !== 'number' ||
-    !Number.isInteger(index) ||
-    index < 0 ||
-    (axis !== 'x' && axis !== 'y')
-  ) {
-    logger.warn('unrecognized presentation event', { name });
-    return silent();
-  }
-
-  return speak('', { keepSessionOpen: true, directives: [panPhotoDirective(index, axis)] });
 }
 
 async function handleWhoIsPerson(

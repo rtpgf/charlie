@@ -118,13 +118,10 @@ export interface PhotoStack {
   motion?: boolean | undefined;
 }
 
-/**
- * Starts the drift on one photograph.
- *
- * Attached to each image rather than driven from the document, so a page that
- * the Pager builds later still moves, and so the animation targets exactly the
- * photo it belongs to.
- */
+/** One pan at a time: starting a new one cancels the one being left. */
+const PAN_SEQUENCER = 'photoPan';
+
+/** Starts the drift on one photograph. */
 function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
   const from = axis === 'y' ? { translateY: '0%' } : { translateX: '0%' };
   const to =
@@ -134,6 +131,10 @@ function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
   return {
     type: 'AnimateItem',
     componentId: id,
+    // Names a sequencer so a page change can start it. A fast-mode command with
+    // an explicit sequencer runs in normal mode on that sequencer rather than
+    // being skipped -- without this, a swipe leaves the photo frozen.
+    sequencer: PAN_SEQUENCER,
     duration: DRIFT_MS,
     easing: 'ease-in-out',
     // Reverses rather than restarting: a photo that snapped back to where it
@@ -148,22 +149,20 @@ function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
   };
 }
 
-/** Marks a page-change event as a request to start panning. */
-export const PAN_EVENT = 'pan';
-
 /**
- * Asks Charlie to start the pan, rather than starting it here.
+ * Restarts the pan whenever a different photograph comes into view.
  *
- * A page change from a swipe runs its commands in *fast mode*, and in fast mode
- * `AnimateItem` jumps straight to the end state -- so animating from here shows
- * a photograph already panned to the bottom, motionless, which is worse than
- * not panning at all. Only normal mode animates, and commands the skill sends
- * back with ExecuteCommands run in normal mode. So the device reports which
- * page it is showing and Charlie answers with the animation.
+ * A page change driven by a swipe runs its commands in *fast mode*, where
+ * `AnimateItem` jumps to its end state and `SendEvent` is ignored outright --
+ * so the photo arrives frozen, and the device cannot even ask the skill to
+ * animate it. The way out is `sequencer`: a fast-mode command that names one
+ * runs in normal mode on that sequencer instead, which is the only reason this
+ * animates at all.
  *
- * The axis travels in the event rather than being looked up again: this page
- * already knows which way its photograph pans, and a share can hold both a
- * portrait and a landscape photograph.
+ * Naming the same sequencer for every page is deliberate. A sequencer runs one
+ * command at a time, so arriving at a new photograph cancels the pan on the one
+ * being left, rather than leaving animations running on photos nobody is
+ * looking at.
  */
 function pageChangedCommands(slides: PhotoSlide[]): unknown[] {
   return slides.flatMap((slide, index) => {
@@ -171,27 +170,11 @@ function pageChangedCommands(slides: PhotoSlide[]): unknown[] {
     if (!pan) return [];
     return [
       {
-        type: 'SendEvent',
+        ...driftCommand(`photo${index}`, pan.axis),
         when: `\${event.source.value == ${index}}`,
-        arguments: [PAN_EVENT, index, pan.axis],
       },
     ];
   });
-}
-
-/**
- * Starts the pan on a photograph the device has just shown.
- *
- * Sent in answer to a page-change event, so it runs in normal mode and actually
- * animates. Trusts nothing from the event but its own shape -- the index and
- * axis are checked by the caller before they get here.
- */
-export function panPhotoDirective(index: number, axis: 'x' | 'y'): Record<string, unknown> {
-  return {
-    type: 'Alexa.Presentation.APL.ExecuteCommands',
-    token: PHOTO_TOKEN,
-    commands: [driftCommand(`photo${index}`, axis)],
-  };
 }
 
 /**

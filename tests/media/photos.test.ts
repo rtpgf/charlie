@@ -511,28 +511,39 @@ describe('the photo document itself', () => {
     }
   });
 
-  it('asks Charlie to pan a new page rather than animating it in place', () => {
-    // A page change from a swipe runs its commands in fast mode, where
-    // AnimateItem jumps straight to the end state -- a photograph frozen at the
-    // bottom of its own travel, which is worse than one that never moves. Only
-    // commands the skill sends back run in normal mode and actually animate.
+  it('restarts the pan for whichever photograph came into view', () => {
     const pager = findPager(photoDocument(stack(3)));
     const onPageChanged = pager['onPageChanged'] as Record<string, unknown>[];
 
     expect(onPageChanged).toHaveLength(3);
-    expect(onPageChanged.map((command) => command['type'])).toEqual([
-      'SendEvent',
-      'SendEvent',
-      'SendEvent',
+    expect(onPageChanged.map((command) => command['componentId'])).toEqual([
+      'photo0',
+      'photo1',
+      'photo2',
     ]);
-    expect(onPageChanged.some((command) => command['type'] === 'AnimateItem')).toBe(false);
-    expect(onPageChanged[1]!['arguments']).toEqual(['pan', 1, 'y']);
     expect(onPageChanged[1]!['when']).toBe('${event.source.value == 1}');
   });
 
-  it('reports the axis with the page, so a mixed share pans correctly', () => {
-    // A share can hold a portrait and a landscape photograph, and they pan
-    // along different axes. The page already knows which; nothing looks it up.
+  it('names a sequencer on every animation, or a swipe leaves the photo frozen', () => {
+    // A page change from a swipe runs in fast mode, where AnimateItem jumps to
+    // its end state and SendEvent is ignored outright -- so the photo arrives
+    // frozen and the device cannot even ask the skill for help. A fast-mode
+    // command that names a sequencer runs in normal mode on it instead. This is
+    // the only reason any of this animates.
+    const document = photoDocument(stack(3));
+    const animations = [
+      ...(findPager(document)['onPageChanged'] as Record<string, unknown>[]),
+      ...(findImages(document).flatMap((image) => (image['onMount'] as unknown[]) ?? []) as Record<
+        string,
+        unknown
+      >[]),
+    ];
+
+    expect(animations.length).toBeGreaterThan(0);
+    for (const command of animations) expect(command['sequencer']).toBe('photoPan');
+  });
+
+  it('pans a mixed share along each photograph\'s own axis', () => {
     const mixed = {
       caption: CAPTION,
       slides: [
@@ -546,8 +557,12 @@ describe('the photo document itself', () => {
       unknown
     >[];
 
-    expect(onPageChanged[0]!['arguments']).toEqual(['pan', 0, 'y']);
-    expect(onPageChanged[1]!['arguments']).toEqual(['pan', 1, 'x']);
+    expect((onPageChanged[0]!['value'] as Record<string, unknown>[])[0]!['to']).toEqual([
+      { translateY: '-30%' },
+    ]);
+    expect((onPageChanged[1]!['value'] as Record<string, unknown>[])[0]!['to']).toEqual([
+      { translateX: '-30%' },
+    ]);
   });
 
   it('pans the first photograph on mount, and only the first', () => {
@@ -644,50 +659,5 @@ describe('regressions', () => {
 
     expect(response.status).toBe(200);
     expect(spoken(response)).toContain('having trouble remembering');
-  });
-});
-
-describe('the screen reporting which photograph it is showing', () => {
-  /** The device's own request, which carries no session and no intent. */
-  function pageChanged(args: unknown[]) {
-    const envelope = intentRequest('ShowLatestPicturesIntent') as Record<string, unknown>;
-    envelope['request'] = {
-      type: 'Alexa.Presentation.APL.UserEvent',
-      requestId: 'r-apl',
-      timestamp: new Date().toISOString(),
-      locale: 'en-US',
-      token: 'charlie-photo',
-      arguments: args,
-    };
-    return request(createServer({ db, store, extractor: undefined }))
-      .post('/alexa')
-      .send(envelope)
-      .set('Content-Type', 'application/json');
-  }
-
-  it('starts the pan, in normal mode, where it actually animates', async () => {
-    const response = await pageChanged(['pan', 1, 'y']);
-
-    expect(response.status).toBe(200);
-    const directive = directives(response)[0] as Record<string, unknown>;
-    expect(directive['type']).toBe('Alexa.Presentation.APL.ExecuteCommands');
-    const command = (directive['commands'] as Record<string, unknown>[])[0]!;
-    expect(command['type']).toBe('AnimateItem');
-    expect(command['componentId']).toBe('photo1');
-  });
-
-  it('says nothing, because nobody asked it anything', async () => {
-    const response = await pageChanged(['pan', 0, 'y']);
-
-    expect(response.body.response.outputSpeech).toBeUndefined();
-  });
-
-  it('refuses an event it did not write', async () => {
-    // It comes from Charlie's own document, but it comes over the network, and
-    // a component id is built from it.
-    for (const args of [[], ['pan'], ['pan', 'one', 'y'], ['pan', -1, 'y'], ['pan', 0, 'z'], ['other', 0, 'y']]) {
-      const response = await pageChanged(args);
-      expect(directives(response)).toEqual([]);
-    }
   });
 });
