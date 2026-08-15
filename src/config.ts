@@ -119,5 +119,12 @@ export const config = {
      * concern for some people.
      */
     photoMotion: process.env.ALEXA_PHOTO_MOTION !== 'off',
+    /**
+     * Keep the microphone open after showing a photo. Off by default: Alexa
+     * dims the screen and shows a pulsing bar for as long as it listens, right
+     * when someone is trying to look at the photograph. On means "next" and
+     * "who sent these?" work without saying the skill name again.
+     */
+    listenAfterPhotos: process.env.ALEXA_LISTEN_AFTER_PHOTOS === 'true',
   },
 } as const;

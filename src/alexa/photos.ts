@@ -57,6 +57,26 @@ export interface PhotoDeps {
   photoFit?: PhotoFit | undefined;
   /** The slow drift across a still photograph. Defaults to on. */
   photoMotion?: boolean | undefined;
+  /**
+   * Keep the microphone open after showing a photo, so "next" works as a bare
+   * follow-up. Off by default on a screen: an open microphone means the
+   * listening bar and a dimmed screen, at exactly the moment someone is trying
+   * to look at the photograph.
+   */
+  listenAfterPhotos?: boolean | undefined;
+}
+
+/**
+ * Whether to hold the session open, and with it the microphone.
+ *
+ * Without a screen, always: speech is the only way to move through a share, so
+ * closing the session would end the conversation mid-share. With a screen, only
+ * if asked for -- the photo can be swiped, and Alexa dims the screen and shows
+ * a pulsing bar for as long as it is listening.
+ */
+function keepListening(envelope: RequestEnvelope, deps: PhotoDeps): boolean {
+  if (!supportsApl(envelope) || !deps.store) return true;
+  return deps.listenAfterPhotos ?? false;
 }
 
 interface PhotoSession {
@@ -144,7 +164,7 @@ async function showStack(
   }
 
   return speak(spoken, {
-    keepSessionOpen: true,
+    keepSessionOpen: keepListening(envelope, deps),
     sessionAttributes: session,
     directives: [
       renderPhotoDirective({
@@ -179,9 +199,17 @@ export async function handlePhotoNavigation(
   envelope: RequestEnvelope,
   deps: PhotoDeps,
   direction: 'next' | 'previous',
+  householdId?: string | undefined,
 ): Promise<ResponseEnvelope> {
   const session = readSession(envelope);
-  if (!session) return speak(noPhotoInView());
+  if (!session) {
+    // With the microphone closed after a photo, "next" arrives as a fresh
+    // invocation carrying no session, so Charlie cannot know what is on screen.
+    // Showing the share is what the person meant; telling them to ask for the
+    // pictures they are already looking at is not.
+    if (householdId) return handleShowLatestPhotos(envelope, deps, householdId);
+    return speak(noPhotoInView());
+  }
 
   const batch = await getBatch(deps.db, session.batchId);
   if (!batch || batch.items.length === 0) return speak(emptyGallery());
@@ -193,7 +221,7 @@ export async function handlePhotoNavigation(
     // someone's finger left the pile. Nothing is spoken: the photo is the
     // answer, and narrating every swipe would be noise.
     return speak('', {
-      keepSessionOpen: true,
+      keepSessionOpen: keepListening(envelope, deps),
       sessionAttributes: writeSession(session),
       directives: [movePhotoDirective(direction)],
     });
@@ -239,7 +267,7 @@ export async function handlePhotoQuestion(
 
   if (question === 'sender') {
     return speak(`${batch.senderName} sent ${batch.items.length === 1 ? 'it' : 'them'}.`, {
-      keepSessionOpen: true,
+      keepSessionOpen: keepListening(envelope, deps),
       sessionAttributes: attributes,
     });
   }
@@ -247,7 +275,7 @@ export async function handlePhotoQuestion(
   const timezone = await findHouseholdTimezone(deps.db, batch.householdId);
   const when = sharedWhen(batch.sharedAt, new Date(), timezone);
   return speak(`${batch.senderName} sent ${batch.items.length === 1 ? 'it' : 'them'} ${when}.`, {
-    keepSessionOpen: true,
+    keepSessionOpen: keepListening(envelope, deps),
     sessionAttributes: attributes,
   });
 }

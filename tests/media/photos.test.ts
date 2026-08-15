@@ -270,12 +270,24 @@ describe('navigating a share', () => {
     expect(spoken(past)).toBe("That's the last one.");
   });
 
-  it('asks the user to start again when nothing is in view', async () => {
-    await sharePhotos(1);
+  it('shows the share when asked to move with no session to move within', async () => {
+    await sharePhotos(2);
 
     const response = await ask('AMAZON.NextIntent', { screen: true });
 
-    expect(spoken(response)).toContain('latest pictures');
+    // The microphone closes after a photo, so "next" arrives as a fresh
+    // invocation with no session. Telling someone to ask for the pictures they
+    // are looking at is not an answer.
+    expect(directives(response)).toHaveLength(1);
+    expect((directives(response)[0] as Record<string, unknown>)['type']).toBe(
+      'Alexa.Presentation.APL.RenderDocument',
+    );
+  });
+
+  it('asks the user to start again when there is nothing to show at all', async () => {
+    const response = await ask('AMAZON.NextIntent', { screen: true });
+
+    expect(spoken(response)).toContain("don't have any pictures");
   });
 });
 
@@ -659,5 +671,46 @@ describe('regressions', () => {
 
     expect(response.status).toBe(200);
     expect(spoken(response)).toContain('having trouble remembering');
+  });
+});
+
+describe('the microphone after a photo', () => {
+  it('closes the session on a screen, so nothing dims the photograph', async () => {
+    await sharePhotos(2, "Here's Natalie at the beach!");
+
+    const response = await ask('ShowLatestPicturesIntent', { screen: true });
+
+    // An open microphone means a pulsing bar and a dimmed screen, at exactly
+    // the moment someone is trying to look at the photo. The share can be
+    // swiped, so nothing is lost by stopping listening.
+    expect(response.body.response.shouldEndSession).toBe(true);
+  });
+
+  it('keeps listening when there is no screen to swipe', async () => {
+    await sharePhotos(2, "Here's Natalie at the beach!");
+
+    const response = await ask('ShowLatestPicturesIntent', { screen: false });
+
+    // Speech is the only way through a share here, so closing the session
+    // would end the conversation in the middle of it.
+    expect(response.body.response.shouldEndSession).toBe(false);
+  });
+
+  it('keeps listening on a screen when asked to', async () => {
+    await sharePhotos(2);
+    const envelope = intentRequest('ShowLatestPicturesIntent') as Record<string, unknown>;
+    (envelope['context'] as { System: Record<string, unknown> }).System['device'] = {
+      deviceId: 'test-device',
+      supportedInterfaces: { 'Alexa.Presentation.APL': {} },
+    };
+
+    const response = await request(
+      createServer({ db, store, extractor: undefined, listenAfterPhotos: true }),
+    )
+      .post('/alexa')
+      .send(envelope)
+      .set('Content-Type', 'application/json');
+
+    expect(response.body.response.shouldEndSession).toBe(false);
   });
 });

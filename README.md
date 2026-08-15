@@ -690,6 +690,20 @@ being left rather than leaving animations running on photos nobody is watching.
 
 Only the first page pans on mount — the rest pan when they come into view.
 
+**Charlie stops listening after showing a photo.** Holding the session open is
+what lets someone say a bare "next", but an open microphone *is* the pulsing
+listening bar, and Alexa dims the screen for as long as it is open — right when
+someone is trying to look at the photograph. There is no way to have one without
+the other, so on a screen the session ends and the share is swiped instead.
+
+Without a screen the session stays open, because speech is the only way through
+a share and closing it would end the conversation midway.
+
+`ALEXA_LISTEN_AFTER_PHOTOS=true` restores bare follow-ups, and the dimming with
+them. Either way, "Alexa, ask weekend charlie for the next picture" still works
+— with no session to say what is on screen, it shows the share rather than
+asking someone to request the pictures they are already looking at.
+
 Which axis depends on the photo's shape, so `group_media` records
 `display_width` and `display_height` — measured by `sharp` while making the
 display copy, which already had the numbers. **A photo with no recorded shape
@@ -1051,6 +1065,7 @@ All settings live in `.env` (see `.env.example`).
 | `ALEXA_VOICE`           | `Matthew`     | Polly voice Charlie speaks in; `''` for the device voice       |
 | `ALEXA_PHOTO_FIT`       | `cover`       | `cover` fills the screen; `contain` shows the whole photo      |
 | `ALEXA_PHOTO_MOTION`    | `on`          | Slow drift across the photo; `off` holds it still              |
+| `ALEXA_LISTEN_AFTER_PHOTOS` | `false`   | Keep the mic open after a photo; dims the screen while it is   |
 | `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
 | `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |

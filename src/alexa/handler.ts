@@ -39,6 +39,8 @@ export interface HandlerDeps {
   photoFit?: PhotoFit | undefined;
   /** The slow drift across a still photograph. */
   photoMotion?: boolean | undefined;
+  /** Hold the microphone open after a photo, for bare "next" follow-ups. */
+  listenAfterPhotos?: boolean | undefined;
 }
 
 /** The slot carrying the person being asked about in WhoIsPersonIntent. */
@@ -82,13 +84,24 @@ export async function handleAlexaRequest(
           return handleShowLatestPhotos(envelope, deps, householdId);
         }
 
-        // Navigation and questions read the photo in view from session state,
-        // so they need no group lookup of their own.
+        // Navigation reads the photo in view from session state. The group is
+        // resolved anyway, because a session may have closed between showing a
+        // photo and being asked to move -- see handlePhotoNavigation.
         case 'AMAZON.NextIntent':
-          return handlePhotoNavigation(envelope, deps, 'next');
+          return handlePhotoNavigation(
+            envelope,
+            deps,
+            'next',
+            (await householdFor(envelope, deps)) ?? undefined,
+          );
 
         case 'AMAZON.PreviousIntent':
-          return handlePhotoNavigation(envelope, deps, 'previous');
+          return handlePhotoNavigation(
+            envelope,
+            deps,
+            'previous',
+            (await householdFor(envelope, deps)) ?? undefined,
+          );
 
         case 'WhoSentThisIntent':
           return handlePhotoQuestion(envelope, deps, 'sender');
