@@ -347,7 +347,13 @@ describe('the photo document itself', () => {
     expect(values).toContain('https://example.test/media/photo1');
     expect(values).toContain(CAPTION);
     expect(values).toContain('1 of 2');
-    expect(values.filter((value) => value.includes('${'))).toEqual([]);
+    // `${event...}` is resolved by the device from the event it is handling and
+    // is the only way to know which page came into view. What must not appear
+    // is a binding against data Charlie was supposed to send and did not --
+    // those render as empty, which looks exactly like a photo that would not
+    // load.
+    const bindings = values.filter((value) => value.includes('${'));
+    expect(bindings.filter((value) => !value.startsWith('${event.'))).toEqual([]);
   });
 
   it('honours the fit chosen for the request', async () => {
@@ -396,18 +402,31 @@ describe('the photo document itself', () => {
     expect(document).toContain('"repeatMode":"reverse"');
   });
 
-  /** The first Image component in the document. */
-  function findImage(value: unknown): Record<string, unknown> {
+  /** Every component of a type, wherever it is nested. */
+  function findAll(value: unknown, type: string): Record<string, unknown>[] {
     const found: Record<string, unknown>[] = [];
     const walk = (node: unknown): void => {
       if (Array.isArray(node)) return node.forEach(walk);
       if (!node || typeof node !== 'object') return;
       const record = node as Record<string, unknown>;
-      if (record['type'] === 'Image') found.push(record);
+      if (record['type'] === type) found.push(record);
       Object.values(record).forEach(walk);
     };
     walk(value);
+    return found;
+  }
+
+  const findImages = (value: unknown) => findAll(value, 'Image');
+
+  function findImage(value: unknown): Record<string, unknown> {
+    const found = findImages(value);
     expect(found.length).toBeGreaterThan(0);
+    return found[0]!;
+  }
+
+  function findPager(value: unknown): Record<string, unknown> {
+    const found = findAll(value, 'Pager');
+    expect(found).toHaveLength(1);
     return found[0]!;
   }
 
@@ -490,6 +509,32 @@ describe('the photo document itself', () => {
 
       expect(travel).toBeLessThanOrEqual(((overscan - 100) / overscan) * 100);
     }
+  });
+
+  it('starts the pan when a photograph comes into view, not when the page loads', () => {
+    // Every page mounts when the document renders, so a pan attached to page
+    // two runs off-screen and is over by the time anyone swipes to it -- which
+    // looks exactly like a photo that does not pan.
+    const pager = findPager(photoDocument(stack(3)));
+    const onPageChanged = pager['onPageChanged'] as Record<string, unknown>[];
+
+    expect(onPageChanged).toHaveLength(3);
+    expect(onPageChanged.map((command) => command['componentId'])).toEqual([
+      'photo0',
+      'photo1',
+      'photo2',
+    ]);
+    // Guarded per page rather than a computed id, because a share can hold a
+    // portrait and a landscape photograph, which pan along different axes.
+    expect(onPageChanged[1]!['when']).toBe('${event.source.value == 1}');
+  });
+
+  it('pans the first photograph on mount, and only the first', () => {
+    const document = photoDocument(stack(3));
+    const mounted = findImages(document).filter((image) => 'onMount' in image);
+
+    expect(mounted).toHaveLength(1);
+    expect(mounted[0]!['id']).toBe('photo0');
   });
 
   it('holds an unmeasured photograph still rather than guessing which way it pans', () => {

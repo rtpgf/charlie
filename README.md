@@ -676,6 +676,12 @@ back. Instead the image is laid out **half again as large along the photo's long
 axis** and slid across the screen, which is what reveals them. A portrait photo
 on a landscape screen pans down; a wide one pans sideways.
 
+The pan starts when a photograph **comes into view**, via the Pager's
+`onPageChanged`, not when the document loads. Every page mounts at render time,
+so an `onMount` pan on page two runs while page two is off-screen and is over by
+the time anyone swipes to it — which looks exactly like a photo that does not
+pan. Only the first page pans on mount.
+
 Which axis depends on the photo's shape, so `group_media` records
 `display_width` and `display_height` — measured by `sharp` while making the
 display copy, which already had the numbers. **A photo with no recorded shape

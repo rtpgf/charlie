@@ -125,29 +125,53 @@ export interface PhotoStack {
  * the Pager builds later still moves, and so the animation targets exactly the
  * photo it belongs to.
  */
-function driftCommands(id: string, axis: 'x' | 'y'): unknown[] {
+function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
   const from = axis === 'y' ? { translateY: '0%' } : { translateX: '0%' };
   const to =
     axis === 'y'
       ? { translateY: `-${TRAVEL_PERCENT}%` }
       : { translateX: `-${TRAVEL_PERCENT}%` };
-  return [
-    {
-      type: 'AnimateItem',
-      componentId: id,
-      duration: DRIFT_MS,
-      easing: 'ease-in-out',
-      // Reverses rather than restarting: a photo that snapped back to where it
-      // started would draw the eye to the animation instead of the face.
-      repeatCount: 60,
-      repeatMode: 'reverse',
-      // Percentages, never viewport units. translateX/translateY take absolute
-      // dimensions or a percentage of the component; a `vh` value is not one
-      // APL accepts here, and one invalid entry drops the whole transform --
-      // so the photo simply sits there, with nothing reported anywhere.
-      value: [{ property: 'transform', from: [from], to: [to] }],
-    },
-  ];
+  return {
+    type: 'AnimateItem',
+    componentId: id,
+    duration: DRIFT_MS,
+    easing: 'ease-in-out',
+    // Reverses rather than restarting: a photo that snapped back to where it
+    // started would draw the eye to the animation instead of the face.
+    repeatCount: 60,
+    repeatMode: 'reverse',
+    // Percentages, never viewport units. translateX/translateY take absolute
+    // dimensions or a percentage of the component; a `vh` value is not one
+    // APL accepts here, and one invalid entry drops the whole transform --
+    // so the photo simply sits there, with nothing reported anywhere.
+    value: [{ property: 'transform', from: [from], to: [to] }],
+  };
+}
+
+/**
+ * Restarts the pan whenever a different photograph comes into view.
+ *
+ * Every page mounts when the document renders, so an `onMount` pan on page two
+ * runs while page two is off-screen and is finished, or never started, by the
+ * time anyone swipes to it -- which looks exactly like a photo that does not
+ * pan. Only the first page pans on mount; every page after that pans when it
+ * becomes the page being looked at.
+ *
+ * One guarded command per photograph rather than a computed component id: the
+ * pan axis differs per photo, and a share can hold both a portrait and a
+ * landscape photograph.
+ */
+function pageChangedCommands(slides: PhotoSlide[]): unknown[] {
+  return slides.flatMap((slide, index) => {
+    const pan = panFor(slide.aspect);
+    if (!pan) return [];
+    return [
+      {
+        ...driftCommand(`photo${index}`, pan.axis),
+        when: `\${event.source.value == ${index}}`,
+      },
+    ];
+  });
 }
 
 /**
@@ -246,7 +270,9 @@ function filledPage(
             height: pan.height,
             scale: 'best-fill',
             align: pan.align,
-            onMount: driftCommands(id, pan.axis),
+            // Only the first page. The rest are started by the Pager when they
+            // come into view -- see pageChangedCommands.
+            ...(index === 0 ? { onMount: [driftCommand(id, pan.axis)] } : {}),
           }
         : {
             type: 'Image',
@@ -325,6 +351,9 @@ export function photoDocument(stack: PhotoStack): Record<string, unknown> {
           initialPage: 0,
           // The last photo returns to the first.
           navigation: stack.slides.length > 1 ? 'wrap' : 'none',
+          ...(fit === 'cover' && motion && stack.slides.length > 1
+            ? { onPageChanged: pageChangedCommands(stack.slides) }
+            : {}),
           items: stack.slides.map((slide, index) =>
             fit === 'cover'
               ? filledPage(slide, stack.caption, index, motion)
