@@ -120,11 +120,15 @@ export const config = {
      */
     photoMotion: process.env.ALEXA_PHOTO_MOTION !== 'off',
     /**
-     * Keep the microphone open after showing a photo. Off by default: Alexa
-     * dims the screen and shows a pulsing bar for as long as it listens, right
-     * when someone is trying to look at the photograph. On means "next" and
-     * "who sent these?" work without saying the skill name again.
+     * Keep the microphone open after showing a photo.
+     *
+     * On by default, and not really optional: an APL document lives only as
+     * long as the session, so ending the session takes the photograph off the
+     * screen with it. The cost is Alexa's listening bar, which dims the screen
+     * for a few seconds. A dimmed photograph beats no photograph.
+     *
+     * Set to 'false' for a photo that is undimmed and gone in three seconds.
      */
-    listenAfterPhotos: process.env.ALEXA_LISTEN_AFTER_PHOTOS === 'true',
+    listenAfterPhotos: process.env.ALEXA_LISTEN_AFTER_PHOTOS !== 'false',
   },
 } as const;

@@ -58,10 +58,8 @@ export interface PhotoDeps {
   /** The slow drift across a still photograph. Defaults to on. */
   photoMotion?: boolean | undefined;
   /**
-   * Keep the microphone open after showing a photo, so "next" works as a bare
-   * follow-up. Off by default on a screen: an open microphone means the
-   * listening bar and a dimmed screen, at exactly the moment someone is trying
-   * to look at the photograph.
+   * Keep the microphone open after showing a photo. Defaults to on, because an
+   * APL document lives only as long as the session that rendered it.
    */
   listenAfterPhotos?: boolean | undefined;
 }
@@ -69,14 +67,20 @@ export interface PhotoDeps {
 /**
  * Whether to hold the session open, and with it the microphone.
  *
- * Without a screen, always: speech is the only way to move through a share, so
- * closing the session would end the conversation mid-share. With a screen, only
- * if asked for -- the photo can be swiped, and Alexa dims the screen and shows
- * a pulsing bar for as long as it is listening.
+ * Almost always yes, and the reason is not the microphone. An APL document is
+ * displayed only while the session that rendered it is alive: end the session
+ * and the Echo Show returns to its home screen, taking the photograph with it
+ * a few seconds after Charlie finishes speaking.
+ *
+ * So the listening bar -- which dims the screen for as long as Alexa listens --
+ * is the price of the photograph staying on screen at all. There is no third
+ * option: the open microphone and the indicator are the same thing.
+ *
+ * Without a screen it is simpler: speech is the only way through a share.
  */
 function keepListening(envelope: RequestEnvelope, deps: PhotoDeps): boolean {
   if (!supportsApl(envelope) || !deps.store) return true;
-  return deps.listenAfterPhotos ?? false;
+  return deps.listenAfterPhotos ?? true;
 }
 
 interface PhotoSession {

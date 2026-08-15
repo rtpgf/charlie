@@ -675,15 +675,17 @@ describe('regressions', () => {
 });
 
 describe('the microphone after a photo', () => {
-  it('closes the session on a screen, so nothing dims the photograph', async () => {
+  it('keeps the session open, because the photograph dies with it', async () => {
     await sharePhotos(2, "Here's Natalie at the beach!");
 
     const response = await ask('ShowLatestPicturesIntent', { screen: true });
 
-    // An open microphone means a pulsing bar and a dimmed screen, at exactly
-    // the moment someone is trying to look at the photo. The share can be
-    // swiped, so nothing is lost by stopping listening.
-    expect(response.body.response.shouldEndSession).toBe(true);
+    // An APL document is displayed only while the session that rendered it is
+    // alive. Ending the session sends the Echo Show back to its home screen a
+    // few seconds after Charlie stops speaking, taking the photo with it -- so
+    // the listening bar, which dims the screen while Alexa listens, is the
+    // price of the photograph being on screen at all.
+    expect(response.body.response.shouldEndSession).toBe(false);
   });
 
   it('keeps listening when there is no screen to swipe', async () => {
@@ -696,7 +698,7 @@ describe('the microphone after a photo', () => {
     expect(response.body.response.shouldEndSession).toBe(false);
   });
 
-  it('keeps listening on a screen when asked to', async () => {
+  it('stops listening on a screen when asked to, photograph and all', async () => {
     await sharePhotos(2);
     const envelope = intentRequest('ShowLatestPicturesIntent') as Record<string, unknown>;
     (envelope['context'] as { System: Record<string, unknown> }).System['device'] = {
@@ -705,12 +707,12 @@ describe('the microphone after a photo', () => {
     };
 
     const response = await request(
-      createServer({ db, store, extractor: undefined, listenAfterPhotos: true }),
+      createServer({ db, store, extractor: undefined, listenAfterPhotos: false }),
     )
       .post('/alexa')
       .send(envelope)
       .set('Content-Type', 'application/json');
 
-    expect(response.body.response.shouldEndSession).toBe(false);
+    expect(response.body.response.shouldEndSession).toBe(true);
   });
 });

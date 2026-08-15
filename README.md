@@ -690,19 +690,21 @@ being left rather than leaving animations running on photos nobody is watching.
 
 Only the first page pans on mount — the rest pan when they come into view.
 
-**Charlie stops listening after showing a photo.** Holding the session open is
-what lets someone say a bare "next", but an open microphone *is* the pulsing
-listening bar, and Alexa dims the screen for as long as it is open — right when
-someone is trying to look at the photograph. There is no way to have one without
-the other, so on a screen the session ends and the share is swiped instead.
+**Charlie keeps listening after showing a photo, and has to.** An APL document
+is displayed only while the session that rendered it is alive — end the session
+and the Echo Show returns to its home screen a few seconds after Charlie stops
+speaking, taking the photograph with it.
 
-Without a screen the session stays open, because speech is the only way through
-a share and closing it would end the conversation midway.
+The cost is Alexa's listening bar, which dims the screen for a few seconds while
+the microphone is open. There is no third option: the open microphone *is* the
+indicator. A dimmed photograph beats no photograph.
 
-`ALEXA_LISTEN_AFTER_PHOTOS=true` restores bare follow-ups, and the dimming with
-them. Either way, "Alexa, ask weekend charlie for the next picture" still works
-— with no session to say what is on screen, it shows the share rather than
-asking someone to request the pictures they are already looking at.
+`ALEXA_LISTEN_AFTER_PHOTOS=false` gives an undimmed photo that vanishes in about
+three seconds. It exists to make the trade explicit, not because it is better.
+
+A bare "next" works while the session is open. Once it has closed, "Alexa, ask
+weekend charlie for the next picture" shows the share again rather than asking
+someone to request the pictures they are already looking at.
 
 Which axis depends on the photo's shape, so `group_media` records
 `display_width` and `display_height` — measured by `sharp` while making the
@@ -1065,7 +1067,7 @@ All settings live in `.env` (see `.env.example`).
 | `ALEXA_VOICE`           | `Matthew`     | Polly voice Charlie speaks in; `''` for the device voice       |
 | `ALEXA_PHOTO_FIT`       | `cover`       | `cover` fills the screen; `contain` shows the whole photo      |
 | `ALEXA_PHOTO_MOTION`    | `on`          | Slow drift across the photo; `off` holds it still              |
-| `ALEXA_LISTEN_AFTER_PHOTOS` | `false`   | Keep the mic open after a photo; dims the screen while it is   |
+| `ALEXA_LISTEN_AFTER_PHOTOS` | `true`    | Required to keep the photo on screen; `false` dismisses it     |
 | `MESSAGING_REACTION_SAVED` | `👍`        | Reaction meaning the message was stored                      |
 | `MESSAGING_REACTION_PROBLEM` | `⚠️`      | Reaction meaning it was received but not stored              |
 | `AI_PROVIDER`           | `anthropic`   | Knowledge-extraction provider                                |
