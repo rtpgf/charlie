@@ -103,6 +103,8 @@ export function supportsApl(envelope: RequestEnvelope): boolean {
 export interface PhotoSlide {
   /** Short-lived signed URL. HTTPS only -- devices reject http. */
   imageUrl: string;
+  /** This photograph's own line of context, not the share's. */
+  caption: string;
   /** "2 of 6", omitted for a single photo. */
   position?: string | undefined;
   /** Width over height. Absent means the photo is shown still. */
@@ -111,8 +113,6 @@ export interface PhotoSlide {
 
 export interface PhotoStack {
   slides: PhotoSlide[];
-  /** "Jenna: Natalie at the beach" -- the human's words where possible. */
-  caption: string;
   fit?: PhotoFit | undefined;
   /** The slow drift. Defaults to on; off is a real accessibility preference. */
   motion?: boolean | undefined;
@@ -285,12 +285,7 @@ function captionBlock(
 }
 
 /** Edge to edge, cropped to fill, drifting slowly. */
-function filledPage(
-  slide: PhotoSlide,
-  caption: string,
-  index: number,
-  motion: boolean,
-): unknown {
+function filledPage(slide: PhotoSlide, index: number, motion: boolean): unknown {
   const id = `photo${index}`;
   const pan = motion ? panFor(slide.aspect) : null;
 
@@ -324,13 +319,13 @@ function filledPage(
             scale: 'best-fill',
             align: 'center',
           },
-      captionBlock(caption, slide.position, { onScrim: true }),
+      captionBlock(slide.caption, slide.position, { onScrim: true }),
     ],
   };
 }
 
 /** The whole photograph, matted like a print. Honest framing, smaller photo. */
-function mattedPage(slide: PhotoSlide, caption: string): unknown {
+function mattedPage(slide: PhotoSlide): unknown {
   return {
     type: 'Container',
     width: '100%',
@@ -362,7 +357,7 @@ function mattedPage(slide: PhotoSlide, caption: string): unknown {
           },
         ],
       },
-      captionBlock(caption, slide.position, { onScrim: false }),
+      captionBlock(slide.caption, slide.position, { onScrim: false }),
     ],
   };
 }
@@ -397,9 +392,7 @@ export function photoDocument(stack: PhotoStack): Record<string, unknown> {
             ? { onPageChanged: pageChangedCommands(stack.slides) }
             : {}),
           items: stack.slides.map((slide, index) =>
-            fit === 'cover'
-              ? filledPage(slide, stack.caption, index, motion)
-              : mattedPage(slide, stack.caption),
+            fit === 'cover' ? filledPage(slide, index, motion) : mattedPage(slide),
           ),
         },
       ],

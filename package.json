@@ -19,7 +19,8 @@
     "knowledge:reprocess": "tsx src/bin/knowledge.ts",
     "media:reprocess": "tsx src/bin/media.ts",
     "media:signed-url": "tsx src/bin/media-url.ts",
-    "media:displays": "tsx src/bin/media-displays.ts"
+    "media:displays": "tsx src/bin/media-displays.ts",
+    "media:people": "tsx src/bin/media-people.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

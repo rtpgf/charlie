@@ -331,10 +331,10 @@ describe('the photo document itself', () => {
   /** A share of `count` photos, the way the handler builds one. */
   function stack(count: number, fit?: 'contain' | 'cover', aspect: number | null = 0.75) {
     return {
-      caption: CAPTION,
       ...(fit ? { fit } : {}),
       slides: Array.from({ length: count }, (_, index) => ({
         imageUrl: `https://example.test/media/photo${index}`,
+        caption: CAPTION,
         position: count > 1 ? `${index + 1} of ${count}` : undefined,
         aspect,
       })),
@@ -572,10 +572,9 @@ describe('the photo document itself', () => {
 
   it('pans a mixed share along each photograph\'s own axis', () => {
     const mixed = {
-      caption: CAPTION,
       slides: [
-        { imageUrl: 'https://example.test/media/tall', position: '1 of 2', aspect: 0.75 },
-        { imageUrl: 'https://example.test/media/wide', position: '2 of 2', aspect: 1.78 },
+        { imageUrl: 'https://example.test/media/tall', caption: CAPTION, position: '1 of 2', aspect: 0.75 },
+        { imageUrl: 'https://example.test/media/wide', caption: CAPTION, position: '2 of 2', aspect: 1.78 },
       ],
     };
 
@@ -847,9 +846,9 @@ describe('moving between photographs', () => {
 
   function pagerOf(count: number): Record<string, unknown> {
     const document = photoDocument({
-      caption: 'c',
       slides: Array.from({ length: count }, (_, index) => ({
         imageUrl: `https://example.test/${index}`,
+        caption: 'c',
         aspect: 0.75,
       })),
     });
@@ -879,5 +878,87 @@ describe('moving between photographs', () => {
 
   it('does not dress up a set with nothing to move between', async () => {
     expect(pagerOf(1)['handlePageMove']).toBeUndefined();
+  });
+});
+
+describe('two shares that landed in the same set', () => {
+  /** Exactly what was sent on the device: two captioned photos, minutes apart. */
+  async function sendTheRealThing() {
+    const media = {
+      fetcher: recordingFetcher(),
+      store,
+      analyzer: recordingAnalyzer({ peopleVisible: 1 }),
+    };
+    const [first] = parseWhatsAppWebhook(
+      imageWebhook({
+        mediaId: 'jt',
+        messageId: 'wamid.jt',
+        caption: "JT's birthday, Mario themed of course",
+        timestamp: '1786800000',
+      }),
+    );
+    await ingestInboundMessage(first!, { db, media });
+
+    const [second] = parseWhatsAppWebhook(
+      imageWebhook({
+        mediaId: 'swim',
+        messageId: 'wamid.swim',
+        caption: 'Hannah and Natalie swimming',
+        timestamp: '1786800030',
+      }),
+    );
+    await ingestInboundMessage(second!, {
+      db,
+      media: { ...media, analyzer: recordingAnalyzer({ peopleVisible: 2 }) },
+    });
+  }
+
+  it('labels each photograph with its own words', async () => {
+    await sendTheRealThing();
+
+    const response = await ask('ShowLatestPicturesIntent', { screen: true });
+
+    const document = JSON.stringify((directives(response)[0] as Record<string, unknown>)['document']);
+    expect(document).toContain("JT's birthday, Mario themed of course");
+    expect(document).toContain('Hannah and Natalie swimming');
+    // Not the first photo's caption twice.
+    expect(document.split("JT's birthday").length - 1).toBe(1);
+  });
+
+  it('finds a photo whose caption named two people', async () => {
+    await sendTheRealThing();
+
+    const envelope = intentRequest('ShowPicturesOfPersonIntent', {
+      slots: { personName: 'Natalie' },
+    }) as Record<string, unknown>;
+    (envelope['context'] as { System: Record<string, unknown> }).System['device'] = {
+      deviceId: 'test-device',
+      supportedInterfaces: { 'Alexa.Presentation.APL': {} },
+    };
+    const response = await request(createServer({ db, store, extractor: undefined }))
+      .post('/alexa')
+      .send(envelope)
+      .set('Content-Type', 'application/json');
+
+    // "Hannah and Natalie swimming" over two people says Natalie is in it.
+    expect(spoken(response)).toBe("Here's a picture of Natalie.");
+  });
+
+  it('does not put the birthday photo among pictures of Natalie', async () => {
+    await sendTheRealThing();
+
+    const evidence = await db.query(
+      `SELECT m.provider_media_id, p.preferred_name, e.evidence_type
+         FROM media_person_evidence e
+         JOIN group_media m ON m.id = e.group_media_id
+         JOIN person p ON p.id = e.person_id
+        ORDER BY m.provider_media_id, p.preferred_name`,
+    );
+
+    expect(evidence.rows).toEqual([
+      { provider_media_id: 'jt', preferred_name: 'JT', evidence_type: 'strong_context' },
+      { provider_media_id: 'swim', preferred_name: 'Hannah', evidence_type: 'strong_context' },
+      { provider_media_id: 'swim', preferred_name: 'Natalie', evidence_type: 'strong_context' },
+    ]);
   });
 });

@@ -22,7 +22,7 @@ import {
   noPicturesOfPerson,
   positionLabel,
   sharedWhen,
-  slideCaption,
+  photoCaption,
   startOfBatch,
   unknownPersonForPhotos,
 } from '../media/present.js';
@@ -82,8 +82,8 @@ export interface PhotoDeps {
 /** A set of photos on screen, however it was asked for. */
 interface PhotoView {
   items: GalleryItem[];
-  /** The line under the photo. */
-  caption: string;
+  /** The line under each photo, given that photo and its share. */
+  caption: (item: GalleryItem) => string;
   /** Everyone who shared something in this view, in no particular order. */
   senders: string[];
   householdId: string;
@@ -138,7 +138,7 @@ async function resolveView(
     }
     return {
       items: batch.items,
-      caption: slideCaption(batch),
+      caption: (item) => photoCaption(item, batch),
       senders: [batch.senderName],
       householdId: batch.householdId,
       session,
@@ -150,7 +150,7 @@ async function resolveView(
   if (items.length === 0) return null;
   return {
     items,
-    caption: `Pictures of ${session.name}`,
+    caption: acrossShares,
     senders: [...new Set(items.map((item) => item.senderName).filter(Boolean) as string[])],
     householdId,
     session,
@@ -227,6 +227,7 @@ async function showView(
     slides = await Promise.all(
       view.items.map(async (item, index) => ({
         imageUrl: await photoUrl(item.mediaId, item.storageKey, deps, store),
+        caption: view.caption(item),
         position: positionLabel(index, view.items.length),
         aspect: item.aspect,
       })),
@@ -248,7 +249,6 @@ async function showView(
     directives: [
       renderPhotoDirective({
         slides,
-        caption: view.caption,
         fit: deps.photoFit,
         motion: deps.photoMotion,
       }),
@@ -276,7 +276,7 @@ export async function handleShowLatestPhotos(
     deps,
     {
       items: batch.items,
-      caption: slideCaption(batch),
+      caption: (item) => photoCaption(item, batch),
       senders: [batch.senderName],
       householdId,
       session: { kind: 'batch', id: batch.batchId, index: 0 },
@@ -316,7 +316,7 @@ export async function handleShowPicturesOfPerson(
     deps,
     {
       items,
-      caption: `Pictures of ${person.preferredName}`,
+      caption: acrossShares,
       senders: [...new Set(items.map((item) => item.senderName).filter(Boolean) as string[])],
       householdId,
       session: { kind: 'person', id: person.id, name: person.preferredName, index: 0 },
@@ -415,6 +415,21 @@ export async function handlePhotoQuestion(
     view.senders.length === 1 ? `${who} sent ${them} ${when}.` : `${who} shared ${when}.`,
     options,
   );
+}
+
+/**
+ * The line under a photo gathered by person rather than by share.
+ *
+ * Its own words if it has any, otherwise who sent it -- never the caption of
+ * the share it happened to arrive in, which may be about somebody else
+ * entirely. The spoken answer has already said whose pictures these are.
+ */
+function acrossShares(item: GalleryItem): string {
+  return photoCaption(item, {
+    senderName: item.senderName ?? 'the family',
+    caption: null,
+    summary: null,
+  });
 }
 
 /** "Jenna and Hannah", "Jenna, Hannah and JT". */

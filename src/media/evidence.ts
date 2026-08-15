@@ -36,11 +36,18 @@ export function isAcceptable(type: EvidenceType): boolean {
 }
 
 /**
- * How many visible people still counts as "the photo is about this person".
- * Above this, a caption naming someone tells Charlie who the *occasion*
- * involves, not which face is theirs.
+ * How many faces a caption may leave unaccounted for and still be about them.
+ *
+ * The question a caption answers is "who is in this photograph", not "which
+ * face is whose". "Hannah and Natalie swimming" over two people accounts for
+ * both of them: each is present, whichever one is on the left. "Natalie's
+ * soccer team!" over eleven children accounts for one, and tells Charlie who
+ * the *occasion* involves rather than who is in the frame.
+ *
+ * One spare face, because a stranger or a passing cousin in shot should not
+ * discard what the family actually said.
  */
-export const PROMINENT_SUBJECT_LIMIT = 2;
+export const UNNAMED_FACE_ALLOWANCE = 1;
 
 export interface CaptionEvidence {
   person: Person;
@@ -91,16 +98,20 @@ export function captionEvidenceForImage(
   const named = peopleNamedInCaption(graph, caption);
   if (named.length === 0) return [];
 
-  // One name and one or two visible people: the caption is about that person.
-  const prominent = named.length === 1 && peopleVisible > 0 && peopleVisible <= PROMINENT_SUBJECT_LIMIT;
+  // Everyone in the frame is accounted for by the caption, give or take one --
+  // so the people it names are the people in the photograph. Counting names
+  // instead would throw away "Hannah and Natalie swimming", which is as plain a
+  // statement about who is present as a family ever makes.
+  const accountedFor =
+    peopleVisible > 0 && peopleVisible <= named.length + UNNAMED_FACE_ALLOWANCE;
 
   return named.map((person) => ({
     person,
-    evidenceType: prominent ? ('strong_context' as const) : ('weak_context' as const),
-    confidence: prominent ? ('high' as const) : ('low' as const),
+    evidenceType: accountedFor ? ('strong_context' as const) : ('weak_context' as const),
+    confidence: accountedFor ? ('high' as const) : ('low' as const),
     // Weak context is recorded but never accepted: Charlie knows Natalie is
-    // associated with the occasion without claiming to know which face is hers.
-    status: prominent ? ('accepted' as const) : ('proposed' as const),
+    // associated with the occasion without claiming she is in the picture.
+    status: accountedFor ? ('accepted' as const) : ('proposed' as const),
   }));
 }
 

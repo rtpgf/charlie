@@ -82,10 +82,29 @@ describe('what a caption is evidence of', () => {
     });
   });
 
-  it('is weak when several people are named at once', () => {
+  it('is strong for each person when the caption accounts for everyone in frame', () => {
+    // "Hannah and Natalie swimming" over two people says both are present. It
+    // does not say which is which, and nothing here claims to know -- but "is
+    // Natalie in this photo" is the only question the gallery ever asks.
     const evidence = captionEvidenceForImage(graph, 'Natalie and JT at the beach', 2);
 
     expect(evidence).toHaveLength(2);
+    expect(evidence.every((item) => item.evidenceType === 'strong_context')).toBe(true);
+    expect(evidence.every((item) => item.status === 'accepted')).toBe(true);
+  });
+
+  it('allows one unnamed face without discarding what the family said', () => {
+    // A stranger or a passing cousin in shot should not throw away the caption.
+    const evidence = captionEvidenceForImage(graph, 'Natalie and JT at the beach', 3);
+
+    expect(evidence.every((item) => item.evidenceType === 'strong_context')).toBe(true);
+  });
+
+  it('stays weak when most of the frame is unaccounted for', () => {
+    // Two named children among eleven is an occasion, not a statement about
+    // who is in the photograph.
+    const evidence = captionEvidenceForImage(graph, 'Natalie and JT at the game', 11);
+
     expect(evidence.every((item) => item.evidenceType === 'weak_context')).toBe(true);
   });
 

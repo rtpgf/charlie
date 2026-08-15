@@ -87,10 +87,25 @@ export function unknownPersonForPhotos(name: string): string {
   return `I don't know anyone called ${name}.`;
 }
 
-/** The caption drawn on the Echo Show alongside a photo. */
-export function slideCaption(batch: GalleryBatch): string {
-  const context = batch.caption?.trim() || batch.summary?.trim();
-  return context ? `${batch.senderName}: ${context}` : `Sent by ${batch.senderName}`;
+/**
+ * The caption drawn on the Echo Show under one photograph.
+ *
+ * The photo's own words win. A share's caption is a fallback, not a
+ * description: WhatsApp puts one caption on the first photo of a set, so the
+ * rest genuinely have nothing of their own to say and inherit it -- but a photo
+ * that arrived with "Hannah and Natalie swimming" must never be labelled with
+ * whatever was said about the photo before it.
+ */
+export function photoCaption(
+  item: { caption: string | null; senderName?: string | undefined },
+  batch: { senderName: string; caption: string | null; summary: string | null },
+): string {
+  const sender = item.senderName ?? batch.senderName;
+  const own = item.caption?.trim();
+  if (own) return `${sender}: ${own}`;
+
+  const shared = batch.caption?.trim() || batch.summary?.trim();
+  return shared ? `${batch.senderName}: ${shared}` : `Sent by ${sender}`;
 }
 
 export function positionLabel(index: number, total: number): string | undefined {

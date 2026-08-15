@@ -661,10 +661,37 @@ Attributing it to all of them means a photo of JT inside a share captioned
 `strong_context`: the second-strongest tier there is, and one Charlie answers
 questions from.
 
-So `group_media.caption` records the words that arrived with each photo, and
-person evidence is drawn from that. The share's caption is still what gets shown
-on screen and given to the vision model as context — it is good context and a
-bad claim.
+So `group_media.caption` records the words that arrived with each photo. Person
+evidence is drawn from that, **and so is the line shown under the photo** — a
+photo captioned "Hannah and Natalie swimming" must never be labelled with
+whatever was said about the photo before it. A photo that arrived bare inherits
+the share's caption, which is the ordinary case for the second and third photo
+of a set.
+
+#### A caption is about who is present, not which face is whose
+
+The rule is a comparison, not a count: the people a caption names are taken to
+be in the photograph when they account for everyone in frame, give or take one
+unnamed face.
+
+| Caption | People visible | Evidence |
+| ------- | -------------- | -------- |
+| "Here's Natalie at the beach" | 1 | `strong_context`, both accepted |
+| "Hannah and Natalie swimming" | 2 | `strong_context` for each |
+| "Natalie and JT at the beach" | 3 | `strong_context` — one spare face is allowed |
+| "Natalie's soccer team!" | 11 | `weak_context`, never answers a question |
+
+Counting names instead — which is what Charlie did at first — threw away
+"Hannah and Natalie swimming", about as plain a statement about who is present
+as a family ever makes. Whether Hannah is the one on the left is a different
+question, and nothing here claims to answer it.
+
+Evidence is written once, at ingest, so changing these rules does not reach
+photos already stored:
+
+```bash
+npm run media:people      # re-derive from stored captions; only ever adds
+```
 
 ### Failure behaviour
 
