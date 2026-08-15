@@ -593,6 +593,28 @@ and is always recorded. When it was taken is evidence: preserved from EXIF when
 the file carries it, absent otherwise, and **never inferred** from how a scene
 or a person looks. `captured_at_source` and `captured_at_confidence` say which.
 
+### Asking for one person
+
+```text
+"Alexa, ask weekend charlie to show me pictures of JT."
+```
+
+`ShowPicturesOfPersonIntent`, answered from accepted evidence only and never
+from `weak_context`. Three outcomes, all of them plain:
+
+| Situation | Charlie says |
+| --------- | ------------ |
+| Photos of JT | "Here are 3 pictures of JT." |
+| JT is known, no photos | "I don't have any pictures of JT yet." |
+| Nobody called Bobby | "I don't know anyone called Bobby." |
+
+**Never someone else's photos.** Being shown Natalie when you asked for JT is
+worse than being told there are none: the second is a fact, the first is Charlie
+being confidently wrong about a grandchild.
+
+A person's photos can span several shares and several senders, so "who sent
+these?" names all of them rather than only the first.
+
 ### Person learning
 
 Ordinary family language is the enrolment mechanism. There is no tagging step
@@ -629,6 +651,20 @@ Doing that credibly needs persistent visual references and a recognition step
 that the current provider does not offer as a reliable primitive, and faking it
 would put AI guesses on the same footing as what a family member actually said.
 Documented as the next deliberate capability rather than approximated.
+
+#### A caption belongs to the photo it arrived with
+
+WhatsApp puts the caption on the first photo of a share and sends the rest bare,
+so `media_batch.caption` describes the *share* — not any one photo in it.
+Attributing it to all of them means a photo of JT inside a share captioned
+"Here's Natalie at the beach!" is recorded as being Natalie, at
+`strong_context`: the second-strongest tier there is, and one Charlie answers
+questions from.
+
+So `group_media.caption` records the words that arrived with each photo, and
+person evidence is drawn from that. The share's caption is still what gets shown
+on screen and given to the vision model as context — it is good context and a
+bad claim.
 
 ### Failure behaviour
 

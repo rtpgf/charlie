@@ -716,3 +716,107 @@ describe('the microphone after a photo', () => {
     expect(response.body.response.shouldEndSession).toBe(true);
   });
 });
+
+describe('pictures of one person', () => {
+  /** A share captioned about one person, so the evidence is accepted. */
+  async function shareOf(caption: string, mediaId: string, messageId: string) {
+    const [message] = parseWhatsAppWebhook(
+      imageWebhook({ mediaId, messageId, caption, timestamp: String(1786700000 + Number(mediaId.slice(1))) }),
+    );
+    await ingestInboundMessage(message!, {
+      db,
+      media: {
+        fetcher: recordingFetcher(),
+        store,
+        analyzer: recordingAnalyzer({ peopleVisible: 1 }),
+      },
+    });
+  }
+
+  function askFor(personName: string, options: { screen: boolean }) {
+    const envelope = intentRequest('ShowPicturesOfPersonIntent', {
+      slots: { personName },
+    }) as Record<string, unknown>;
+    const context = envelope['context'] as { System: Record<string, unknown> };
+    context.System['device'] = {
+      deviceId: 'test-device',
+      supportedInterfaces: options.screen ? { 'Alexa.Presentation.APL': {} } : {},
+    };
+    return request(createServer({ db, store, extractor: undefined }))
+      .post('/alexa')
+      .send(envelope)
+      .set('Content-Type', 'application/json');
+  }
+
+  it('shows the photos of the person actually asked for', async () => {
+    await shareOf("Here's Natalie at the beach!", 'm1', 'wamid.1');
+    await shareOf('JT in the yard!', 'm2', 'wamid.2');
+
+    const response = await askFor('JT', { screen: true });
+
+    expect(spoken(response)).toBe("Here's a picture of JT.");
+    expect(directives(response)).toHaveLength(1);
+  });
+
+  it('says there are none rather than showing somebody else', async () => {
+    await shareOf("Here's Natalie at the beach!", 'm1', 'wamid.1');
+
+    const response = await askFor('JT', { screen: true });
+
+    // Being shown Natalie is worse than being told there is nothing: the second
+    // is a fact, the first is Charlie being wrong about a grandchild.
+    expect(spoken(response)).toBe("I don't have any pictures of JT yet.");
+    expect(directives(response)).toEqual([]);
+  });
+
+  it('says so when it does not know the name at all', async () => {
+    const response = await askFor('Bobby', { screen: true });
+
+    expect(spoken(response)).toBe("I don't know anyone called Bobby.");
+    expect(directives(response)).toEqual([]);
+  });
+
+  it('finds a person by an alias, as the rest of Charlie does', async () => {
+    await shareOf('James Thomas scored today!', 'm1', 'wamid.1');
+
+    const response = await askFor('James', { screen: true });
+
+    expect(spoken(response)).toBe("Here's a picture of JT.");
+  });
+
+  it('counts them out loud on a device with no screen', async () => {
+    await shareOf('JT in the yard!', 'm1', 'wamid.1');
+    await shareOf('JT at practice!', 'm2', 'wamid.2');
+
+    const response = await askFor('JT', { screen: false });
+
+    expect(spoken(response)).toBe('I have 2 pictures of JT.');
+    expect(directives(response)).toEqual([]);
+  });
+
+  it('never answers with a photo of a crowd someone was merely named over', async () => {
+    const [message] = parseWhatsAppWebhook(
+      imageWebhook({ mediaId: 'm1', messageId: 'wamid.1', caption: "Natalie's soccer team!" }),
+    );
+    await ingestInboundMessage(message!, {
+      db,
+      media: { fetcher: recordingFetcher(), store, analyzer: recordingAnalyzer({ peopleVisible: 11 }) },
+    });
+
+    const response = await askFor('Natalie', { screen: true });
+
+    expect(spoken(response)).toBe("I don't have any pictures of Natalie yet.");
+  });
+
+  it('names everyone who sent them when asked', async () => {
+    await shareOf('JT in the yard!', 'm1', 'wamid.1');
+    const first = await askFor('JT', { screen: true });
+
+    const response = await ask('WhoSentThisIntent', {
+      screen: true,
+      session: first.body.sessionAttributes,
+    });
+
+    expect(spoken(response)).toBe('Jenna sent it.');
+  });
+});

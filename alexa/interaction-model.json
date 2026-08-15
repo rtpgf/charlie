@@ -98,6 +98,27 @@
           ]
         },
         {
+          "name": "ShowPicturesOfPersonIntent",
+          "slots": [
+            {
+              "name": "personName",
+              "type": "AMAZON.FirstName"
+            }
+          ],
+          "samples": [
+            "show me pictures of {personName}",
+            "show me photos of {personName}",
+            "show me a picture of {personName}",
+            "show pictures of {personName}",
+            "pictures of {personName}",
+            "photos of {personName}",
+            "do you have pictures of {personName}",
+            "do you have any pictures of {personName}",
+            "let me see pictures of {personName}",
+            "let's see pictures of {personName}"
+          ]
+        },
+        {
           "name": "WhoSentThisIntent",
           "samples": [
             "who sent these",

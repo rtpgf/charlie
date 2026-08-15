@@ -15,6 +15,7 @@ import {
   handlePhotoNavigation,
   handlePhotoQuestion,
   handleShowLatestPhotos,
+  handleShowPicturesOfPerson,
 } from './photos.js';
 import {
   goodbye,
@@ -84,6 +85,14 @@ export async function handleAlexaRequest(
           return handleShowLatestPhotos(envelope, deps, householdId);
         }
 
+        case 'ShowPicturesOfPersonIntent': {
+          const spokenName = request.intent.slots?.[PERSON_NAME_SLOT]?.value?.trim();
+          if (!spokenName) return speak(missingPersonName(), { keepSessionOpen: true });
+          const householdId = await householdFor(envelope, deps);
+          if (!householdId) return speak(unrecognizedAccount());
+          return handleShowPicturesOfPerson(envelope, deps, householdId, spokenName);
+        }
+
         // Navigation reads the photo in view from session state. The group is
         // resolved anyway, because a session may have closed between showing a
         // photo and being asked to move -- see handlePhotoNavigation.
@@ -103,11 +112,24 @@ export async function handleAlexaRequest(
             (await householdFor(envelope, deps)) ?? undefined,
           );
 
+        // The group is resolved for questions too: a set of photos of one
+        // person is rebuilt from the group, and a session attribute naming a
+        // share is a claim from the network, not a permission.
         case 'WhoSentThisIntent':
-          return handlePhotoQuestion(envelope, deps, 'sender');
+          return handlePhotoQuestion(
+            envelope,
+            deps,
+            'sender',
+            (await householdFor(envelope, deps)) ?? undefined,
+          );
 
         case 'WhenWasThisSharedIntent':
-          return handlePhotoQuestion(envelope, deps, 'when');
+          return handlePhotoQuestion(
+            envelope,
+            deps,
+            'when',
+            (await householdFor(envelope, deps)) ?? undefined,
+          );
 
         case 'AMAZON.HelpIntent':
           return speak(helpMessage(), { keepSessionOpen: true });

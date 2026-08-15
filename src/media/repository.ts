@@ -14,6 +14,8 @@ export interface MediaRow {
   storageKey: string | null;
   status: string;
   sharedAt: Date;
+  /** Words sent with this photo specifically, never the batch's caption. */
+  caption: string | null;
 }
 
 function toMediaRow(row: Record<string, unknown>): MediaRow {
@@ -28,6 +30,7 @@ function toMediaRow(row: Record<string, unknown>): MediaRow {
     storageKey: (row['storage_key'] as string | null) ?? null,
     status: row['status'] as string,
     sharedAt: row['shared_at'] as Date,
+    caption: (row['caption'] as string | null) ?? null,
   };
 }
 
@@ -101,13 +104,14 @@ export async function insertMedia(
     providerMediaId: string;
     mimeType: string | null;
     sharedAt: Date;
+    caption: string | null;
   },
 ): Promise<{ media: MediaRow; created: boolean }> {
   const inserted = await db.query(
     `INSERT INTO group_media
        (household_id, group_message_id, media_batch_id, sequence, provider_media_id,
-        mime_type, shared_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+        mime_type, shared_at, caption)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (household_id, provider_media_id) DO NOTHING
      RETURNING *`,
     [
@@ -118,6 +122,7 @@ export async function insertMedia(
       input.providerMediaId,
       input.mimeType,
       input.sharedAt,
+      input.caption,
     ],
   );
 

@@ -17,6 +17,8 @@ export interface GalleryItem {
   capturedAt: Date | null;
   /** Width over height of the display copy. Null when never measured. */
   aspect: number | null;
+  /** Who shared it. Set when photos are gathered across more than one share. */
+  senderName?: string | undefined;
 }
 
 export interface GalleryBatch {
@@ -38,6 +40,7 @@ function toItem(row: Record<string, unknown>): GalleryItem {
     sharedAt: row['shared_at'] as Date,
     capturedAt: (row['captured_at'] as Date | null) ?? null,
     aspect: aspectOf(row),
+    ...(row['preferred_name'] ? { senderName: row['preferred_name'] as string } : {}),
   };
 }
 
@@ -142,9 +145,11 @@ export async function getRecentMediaByPerson(
 ): Promise<GalleryItem[]> {
   const result = await db.query(
     `SELECT DISTINCT m.id, m.storage_key, m.sequence, m.shared_at, m.captured_at,
-            m.display_width, m.display_height, a.description
+            m.display_width, m.display_height, a.description, p.preferred_name
        FROM group_media m
        JOIN media_person_evidence e ON e.group_media_id = m.id
+       JOIN media_batch b ON b.id = m.media_batch_id
+       JOIN person p ON p.id = b.sender_person_id
        LEFT JOIN media_analysis a
          ON a.group_media_id = m.id AND a.status = 'accepted'
       WHERE m.household_id = $1

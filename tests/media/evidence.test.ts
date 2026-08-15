@@ -215,3 +215,56 @@ describe('learning from ordinary family language', () => {
     expect(evidence.rows[0]!['count']).toBe(0);
   });
 });
+
+describe('a caption belongs to the photo it arrived with', () => {
+  it('does not attribute one photo\'s caption to the rest of the share', async () => {
+    const { db, householdId } = await createSeededTestDb({ whatsappSenderId: JENNA_WHATSAPP_ID });
+    const media = { fetcher: recordingFetcher(), store: recordingStore(), analyzer: recordingAnalyzer({ peopleVisible: 1 }) };
+
+    // WhatsApp puts the caption on the first photo of a share and sends the
+    // rest bare -- which is exactly how a photo of JT ends up in a share
+    // captioned about Natalie.
+    const [first] = parseWhatsAppWebhook(
+      imageWebhook({ mediaId: 'm1', messageId: 'wamid.1', caption: "Here's Natalie at the beach!" }),
+    );
+    await ingestInboundMessage(first!, { db, media });
+    const [second] = parseWhatsAppWebhook(
+      imageWebhook({ mediaId: 'm2', messageId: 'wamid.2', timestamp: '1786600030' }),
+    );
+    await ingestInboundMessage(second!, { db, media });
+
+    const rows = await db.query(
+      `SELECT m.sequence, count(e.id)::int AS claims
+         FROM group_media m
+         LEFT JOIN media_person_evidence e ON e.group_media_id = m.id
+        GROUP BY m.sequence ORDER BY m.sequence`,
+    );
+
+    expect(rows.rows[0]).toMatchObject({ sequence: 0, claims: 1 });
+    expect(rows.rows[1]).toMatchObject({ sequence: 1, claims: 0 });
+
+    // And the share still carries the words, for what is said and shown.
+    const batch = await db.query('SELECT caption FROM media_batch');
+    expect(batch.rows[0]!['caption']).toBe("Here's Natalie at the beach!");
+    expect(householdId).toBeTruthy();
+  });
+
+  it('keeps the caption on a photo that arrived alone with it', async () => {
+    const { db } = await createSeededTestDb({ whatsappSenderId: JENNA_WHATSAPP_ID });
+    const [message] = parseWhatsAppWebhook(
+      imageWebhook({ mediaId: 'm1', messageId: 'wamid.1', caption: 'JT in the yard!' }),
+    );
+
+    await ingestInboundMessage(message!, {
+      db,
+      media: {
+        fetcher: recordingFetcher(),
+        store: recordingStore(),
+        analyzer: recordingAnalyzer({ peopleVisible: 1 }),
+      },
+    });
+
+    const stored = await db.query('SELECT caption FROM group_media');
+    expect(stored.rows[0]!['caption']).toBe('JT in the yard!');
+  });
+});

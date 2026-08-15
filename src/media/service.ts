@@ -82,6 +82,9 @@ export async function ingestMedia(
       providerMediaId: item.externalMediaId,
       mimeType: item.mediaType ?? null,
       sharedAt,
+      // This photo's own words. The message text counts only when the message
+      // carried a single photo; with several, it says nothing about which.
+      caption: item.caption ?? (message.media.length === 1 ? (message.text ?? null) : null),
     });
 
     // A redelivered webhook must not re-download or re-store anything.
@@ -299,9 +302,11 @@ async function analyzeStoredMedia(
       proposal: image,
     });
 
-    // Human words first, model second, strongest claim per person kept.
+    // Human words first, model second, strongest claim per person kept. The
+    // caption is this photo's own: the batch caption belongs to the share, and
+    // naming someone in it says nothing about who is in every photo of it.
     const evidence = mergeEvidence(
-      captionEvidenceForImage(graph, context.caption, image.peopleVisible),
+      captionEvidenceForImage(graph, item.row.caption, image.peopleVisible),
       visualEvidenceForImage(graph, image),
     );
 
@@ -335,7 +340,8 @@ async function recordCaptionEvidence(
   deps: MediaDeps,
 ): Promise<void> {
   for (const item of stored) {
-    for (const claim of captionEvidenceForImage(graph, context.caption, peopleVisible)) {
+    // Each photo's own caption, for the same reason as the main path.
+    for (const claim of captionEvidenceForImage(graph, item.row.caption, peopleVisible)) {
       await insertEvidence(deps.db, {
         mediaId: item.row.id,
         personId: claim.person.id,

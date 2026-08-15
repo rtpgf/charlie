@@ -53,6 +53,40 @@ export function describeBatch(
     : `${batch.senderName} sent ${noun} ${when}.`;
 }
 
+/**
+ * What Charlie says when asked for pictures of one person.
+ *
+ * Deliberately says the name back. Someone who asked for JT and is shown
+ * Natalie should hear the mistake, not have to notice it.
+ */
+export function describePersonPhotos(
+  name: string,
+  count: number,
+  options: { hasScreen: boolean },
+): string {
+  if (options.hasScreen) {
+    return count === 1 ? `Here's a picture of ${name}.` : `Here are ${count} pictures of ${name}.`;
+  }
+  return count === 1
+    ? `I have one picture of ${name}.`
+    : `I have ${count} pictures of ${name}.`;
+}
+
+/**
+ * Nothing found, said so that it cannot be mistaken for a different answer.
+ *
+ * "Yet" because Charlie learns people from ordinary family language: the honest
+ *state is not knowing, not never.
+ */
+export function noPicturesOfPerson(name: string): string {
+  return `I don't have any pictures of ${name} yet.`;
+}
+
+/** Asked about someone Charlie has never heard of. */
+export function unknownPersonForPhotos(name: string): string {
+  return `I don't know anyone called ${name}.`;
+}
+
 /** The caption drawn on the Echo Show alongside a photo. */
 export function slideCaption(batch: GalleryBatch): string {
   const context = batch.caption?.trim() || batch.summary?.trim();
