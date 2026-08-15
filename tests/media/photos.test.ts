@@ -511,22 +511,43 @@ describe('the photo document itself', () => {
     }
   });
 
-  it('starts the pan when a photograph comes into view, not when the page loads', () => {
-    // Every page mounts when the document renders, so a pan attached to page
-    // two runs off-screen and is over by the time anyone swipes to it -- which
-    // looks exactly like a photo that does not pan.
+  it('asks Charlie to pan a new page rather than animating it in place', () => {
+    // A page change from a swipe runs its commands in fast mode, where
+    // AnimateItem jumps straight to the end state -- a photograph frozen at the
+    // bottom of its own travel, which is worse than one that never moves. Only
+    // commands the skill sends back run in normal mode and actually animate.
     const pager = findPager(photoDocument(stack(3)));
     const onPageChanged = pager['onPageChanged'] as Record<string, unknown>[];
 
     expect(onPageChanged).toHaveLength(3);
-    expect(onPageChanged.map((command) => command['componentId'])).toEqual([
-      'photo0',
-      'photo1',
-      'photo2',
+    expect(onPageChanged.map((command) => command['type'])).toEqual([
+      'SendEvent',
+      'SendEvent',
+      'SendEvent',
     ]);
-    // Guarded per page rather than a computed id, because a share can hold a
-    // portrait and a landscape photograph, which pan along different axes.
+    expect(onPageChanged.some((command) => command['type'] === 'AnimateItem')).toBe(false);
+    expect(onPageChanged[1]!['arguments']).toEqual(['pan', 1, 'y']);
     expect(onPageChanged[1]!['when']).toBe('${event.source.value == 1}');
+  });
+
+  it('reports the axis with the page, so a mixed share pans correctly', () => {
+    // A share can hold a portrait and a landscape photograph, and they pan
+    // along different axes. The page already knows which; nothing looks it up.
+    const mixed = {
+      caption: CAPTION,
+      slides: [
+        { imageUrl: 'https://example.test/media/tall', position: '1 of 2', aspect: 0.75 },
+        { imageUrl: 'https://example.test/media/wide', position: '2 of 2', aspect: 1.78 },
+      ],
+    };
+
+    const onPageChanged = findPager(photoDocument(mixed))['onPageChanged'] as Record<
+      string,
+      unknown
+    >[];
+
+    expect(onPageChanged[0]!['arguments']).toEqual(['pan', 0, 'y']);
+    expect(onPageChanged[1]!['arguments']).toEqual(['pan', 1, 'x']);
   });
 
   it('pans the first photograph on mount, and only the first', () => {
@@ -623,5 +644,50 @@ describe('regressions', () => {
 
     expect(response.status).toBe(200);
     expect(spoken(response)).toContain('having trouble remembering');
+  });
+});
+
+describe('the screen reporting which photograph it is showing', () => {
+  /** The device's own request, which carries no session and no intent. */
+  function pageChanged(args: unknown[]) {
+    const envelope = intentRequest('ShowLatestPicturesIntent') as Record<string, unknown>;
+    envelope['request'] = {
+      type: 'Alexa.Presentation.APL.UserEvent',
+      requestId: 'r-apl',
+      timestamp: new Date().toISOString(),
+      locale: 'en-US',
+      token: 'charlie-photo',
+      arguments: args,
+    };
+    return request(createServer({ db, store, extractor: undefined }))
+      .post('/alexa')
+      .send(envelope)
+      .set('Content-Type', 'application/json');
+  }
+
+  it('starts the pan, in normal mode, where it actually animates', async () => {
+    const response = await pageChanged(['pan', 1, 'y']);
+
+    expect(response.status).toBe(200);
+    const directive = directives(response)[0] as Record<string, unknown>;
+    expect(directive['type']).toBe('Alexa.Presentation.APL.ExecuteCommands');
+    const command = (directive['commands'] as Record<string, unknown>[])[0]!;
+    expect(command['type']).toBe('AnimateItem');
+    expect(command['componentId']).toBe('photo1');
+  });
+
+  it('says nothing, because nobody asked it anything', async () => {
+    const response = await pageChanged(['pan', 0, 'y']);
+
+    expect(response.body.response.outputSpeech).toBeUndefined();
+  });
+
+  it('refuses an event it did not write', async () => {
+    // It comes from Charlie's own document, but it comes over the network, and
+    // a component id is built from it.
+    for (const args of [[], ['pan'], ['pan', 'one', 'y'], ['pan', -1, 'y'], ['pan', 0, 'z'], ['other', 0, 'y']]) {
+      const response = await pageChanged(args);
+      expect(directives(response)).toEqual([]);
+    }
   });
 });

@@ -148,18 +148,22 @@ function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
   };
 }
 
+/** Marks a page-change event as a request to start panning. */
+export const PAN_EVENT = 'pan';
+
 /**
- * Restarts the pan whenever a different photograph comes into view.
+ * Asks Charlie to start the pan, rather than starting it here.
  *
- * Every page mounts when the document renders, so an `onMount` pan on page two
- * runs while page two is off-screen and is finished, or never started, by the
- * time anyone swipes to it -- which looks exactly like a photo that does not
- * pan. Only the first page pans on mount; every page after that pans when it
- * becomes the page being looked at.
+ * A page change from a swipe runs its commands in *fast mode*, and in fast mode
+ * `AnimateItem` jumps straight to the end state -- so animating from here shows
+ * a photograph already panned to the bottom, motionless, which is worse than
+ * not panning at all. Only normal mode animates, and commands the skill sends
+ * back with ExecuteCommands run in normal mode. So the device reports which
+ * page it is showing and Charlie answers with the animation.
  *
- * One guarded command per photograph rather than a computed component id: the
- * pan axis differs per photo, and a share can hold both a portrait and a
- * landscape photograph.
+ * The axis travels in the event rather than being looked up again: this page
+ * already knows which way its photograph pans, and a share can hold both a
+ * portrait and a landscape photograph.
  */
 function pageChangedCommands(slides: PhotoSlide[]): unknown[] {
   return slides.flatMap((slide, index) => {
@@ -167,11 +171,27 @@ function pageChangedCommands(slides: PhotoSlide[]): unknown[] {
     if (!pan) return [];
     return [
       {
-        ...driftCommand(`photo${index}`, pan.axis),
+        type: 'SendEvent',
         when: `\${event.source.value == ${index}}`,
+        arguments: [PAN_EVENT, index, pan.axis],
       },
     ];
   });
+}
+
+/**
+ * Starts the pan on a photograph the device has just shown.
+ *
+ * Sent in answer to a page-change event, so it runs in normal mode and actually
+ * animates. Trusts nothing from the event but its own shape -- the index and
+ * axis are checked by the caller before they get here.
+ */
+export function panPhotoDirective(index: number, axis: 'x' | 'y'): Record<string, unknown> {
+  return {
+    type: 'Alexa.Presentation.APL.ExecuteCommands',
+    token: PHOTO_TOKEN,
+    commands: [driftCommand(`photo${index}`, axis)],
+  };
 }
 
 /**
