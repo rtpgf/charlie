@@ -1251,9 +1251,6 @@ Noted while building, deliberately not built:
   fallbacks.
 - **Provenance beyond seeding**: `source_type` already distinguishes `seed`,
   `stated`, and `inferred`, but nothing yet writes the latter two.
-- **Media retrieval.** Inbound media is normalized (`externalMediaId`,
-  `mediaType`, `caption`) but never fetched. A photo milestone adds a download
-  step plus storage; nothing else in the pipeline should need to change.
 - **Raw provider payloads are deliberately not stored.** The normalized row plus
   the provider message id carries enough provenance to debug, and keeping full
   Meta JSON would retain personal data with no current use. If replay debugging
@@ -1288,15 +1285,105 @@ Noted while building, deliberately not built:
   group can ask anything.
 - **Cheaper extraction.** Extraction is a small, well-specified task and an
   obvious candidate for a smaller model later. Deliberately not optimized now.
-- **Visual re-identification.** The evidence model supports it and the
-  `visual_match` path exists, but Charlie cannot yet recognize a face in a new
-  photo from previously learned references. This is the "and Charlie remembered
-  her" half of the photo experience.
-- **Conversational correction.** "That's Hannah, not Natalie" is representable
-  (`human_correction` outranks everything and `superseded_by` records the
-  override) but nothing yet routes such a message into it.
-- **Video and audio.** Only images are retrieved; other media types are
-  recognized and skipped.
+- **Visual re-identification, and the fact that `visual_match` is currently
+  vacuous.** A photo sent with no caption is unattributable: Charlie has no
+  reference faces, so nobody is named and it can never answer "show me pictures
+  of JT". Observed on a real photo of two grandchildren in a field — the model
+  described them accurately and named nobody, which is the honest outcome.
+
+  Worth knowing before building on it: the `visual_match` evidence that *does*
+  get written today is not independent identification. The caption is given to
+  the vision model as context, so it repeats the names the caption already
+  contained. Harmless, since it is stored as `proposed` and never answers
+  anything, but it means there is currently the appearance of a visual identity
+  signal and none of the substance.
+
+  Two things shape a real implementation. **The reference set needs unambiguous
+  labels** — one named person and one visible face. "Hannah and Natalie
+  swimming" over two people establishes that both are present but not which is
+  which, so it cannot label a face; families produce single-subject captioned
+  photos naturally, and those are the bootstrap. **The opt-in belongs to the
+  group, not the account**, because the person enabling it is not the person
+  being templated: grandchildren, and whoever else appears in a family photo.
+
+  Two implementations, genuinely different bets. Reference photos passed inline
+  to the vision model store no templates at all and need no new dependency, but
+  will not scale past a handful of people. Local embeddings (`onnxruntime-node`
+  with a small ArcFace model) scale and cost nothing per photo, and are the ones
+  that store face vectors. Either sits behind a `FaceMatcher` capability
+  interface, like `KnowledgeExtractor` and `ActivityMatcher`, so the opt-in
+  switch controls something with a definition.
+
+  Face geometry is separately regulated in a few US states — Illinois BIPA is
+  the sharp one, and it turns on the scan rather than on where it is stored.
+  Academic for a prototype on a family's own hardware; not academic for anything
+  with users. It argues for templates that are derivable and deletable rather
+  than treated as precious.
+- **Nothing writes the top two evidence tiers.** `explicit_assertion` and
+  `human_correction` sit above everything a model can conclude, and
+  `superseded_by` exists to record an override — but no code path produces
+  either. Two consequences: *"that last picture is Natalie and JT"* cannot teach
+  Charlie anything, and **a wrong attribution cannot be corrected at all**. The
+  second is the more serious, and the first is the cheapest way to make
+  uncaptioned photos findable without any face modelling: someone says who is in
+  it.
+- **Video.** Only images are retrieved. The blockers are specific rather than
+  structural: `detectImageType` sniffs JPEG/PNG/WebP and rejects the rest,
+  `MAX_MEDIA_BYTES` is 16 MB where WhatsApp video routinely is not, and the
+  analyzer takes image blocks. `group_media` is already named for media rather
+  than photos, so the schema generalizes — the display copy becomes a poster
+  frame, and APL renders `Video` instead of `Image`. The largest indexing signal
+  in family video is not visual at all but **speech**, which is also the biggest
+  privacy escalation available here, and worth deciding rather than drifting
+  into.
+
+- **A searchable index, and a way to reach it in ordinary language.** Today the
+  only queryable dimensions are *who* (evidence) and *when shared* (timestamps),
+  and only the newest share is addressable — a new share makes every older one
+  unreachable by voice.
+
+  Multi-person queries are nearly free already: "JT and Natalie together" is a
+  `GROUP BY … HAVING count(distinct person_id) = 2` over accepted evidence, with
+  no new storage. Topical queries are not: "birthday party" has nowhere to match
+  when the description says "children around a cake with candles".
+
+  The shape that fits is a derived `media_index` — one row per media holding
+  people, a controlled tag vocabulary, a `tsvector` over caption and description
+  and summary, and a notability score for resurfacing. **A projection, never the
+  record**: rebuildable from `media_analysis` and `media_person_evidence`
+  whenever the analysis schema changes, which is what `schema_version` and the
+  reprocess path were for. Tags need a validated vocabulary for the same reason
+  extraction does — a model left to free text produces "bday", "birthday party"
+  and "b-day" as three tags, and grandma's phrasing matches none of them.
+
+  Reaching it wants one broad intent with an `AMAZON.SearchQuery` slot and a
+  `MediaQueryPlanner` capability that turns free text into a structured query —
+  people ids, date range, tags, terms — validated against the group graph before
+  any SQL runs. Modelling it as intents-with-slots instead means a combinatorial
+  explosion, and custom slot types would put family names back into the
+  interaction model.
+
+  One honesty constraint on anything time-based: `captured_at` is almost always
+  null because WhatsApp strips EXIF, so "two years ago" means *shared* two years
+  ago. `captured_at_confidence` exists to keep that visible, and Charlie should
+  say "shared", never "taken".
+
+- **A captioned message probably starts a new share.** Batching groups by sender
+  within 90 seconds, so two unrelated sends a minute apart become one share —
+  observed with "JT's birthday" and "Hannah and Natalie swimming", which landed
+  together. Each photo now carries its own caption so the screen is right, but
+  the *grouping* is not, and the spoken line uses the first caption. A message
+  arriving with its own caption is a strong signal of a new thought; bare
+  follow-ups are the ordinary continuation. Left alone because it changes what
+  "the latest pictures" returns.
+
+- **Cropping and panning are geometric, not content-aware.** A photo is anchored
+  at the top and panned down because tall photos are usually tall for a reason,
+  not because Charlie knows where the faces are. Storing a focal point — rather
+  than baking a smart crop into the display copy — would keep the full image and
+  work across screen shapes. `sharp`'s attention heuristic is the predictable
+  option; asking the vision model for coordinates is the clever one, and models
+  are far better at "a child on the sand" than at "she is at 0.34, 0.21".
 - **Export and deletion.** The schema and storage layout support both — every
   object traces to a row, every row to a group — but neither is exposed.
 - **Admin alerting.** Failures are silent to the family by design, so an outage
