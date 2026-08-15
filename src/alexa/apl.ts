@@ -147,11 +147,22 @@ const CROSSFADE = [
   },
 ];
 
-/** One pan at a time: starting a new one cancels the one being left. */
-const PAN_SEQUENCER = 'photoPan';
+/**
+ * One sequencer per photograph, never a shared one.
+ *
+ * A sequencer holds a single command, so sharing one means starting the new
+ * photo's pan *stops* the outgoing photo's -- and "when an AnimateItem command
+ * stops, the animation jumps ahead to the end state". That snap is visible: the
+ * photo being left lurches to the bottom of its travel just before it fades
+ * out. With a sequencer each, the outgoing photograph keeps drifting gently
+ * while it fades, which is the whole point of a crossfade.
+ */
+function panSequencer(index: number): string {
+  return `photoPan${index}`;
+}
 
 /** Starts the drift on one photograph. */
-function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
+function driftCommand(index: number, axis: 'x' | 'y'): Record<string, unknown> {
   const from = axis === 'y' ? { translateY: '0%' } : { translateX: '0%' };
   const to =
     axis === 'y'
@@ -159,11 +170,11 @@ function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
       : { translateX: `-${TRAVEL_PERCENT}%` };
   return {
     type: 'AnimateItem',
-    componentId: id,
+    componentId: `photo${index}`,
     // Names a sequencer so a page change can start it. A fast-mode command with
     // an explicit sequencer runs in normal mode on that sequencer rather than
     // being skipped -- without this, a swipe leaves the photo frozen.
-    sequencer: PAN_SEQUENCER,
+    sequencer: panSequencer(index),
     duration: DRIFT_MS,
     easing: 'ease-in-out',
     // Reverses rather than restarting: a photo that snapped back to where it
@@ -179,7 +190,7 @@ function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
 }
 
 /**
- * Restarts the pan whenever a different photograph comes into view.
+ * Starts the pan on whichever photograph came into view.
  *
  * A page change driven by a swipe runs its commands in *fast mode*, where
  * `AnimateItem` jumps to its end state and `SendEvent` is ignored outright --
@@ -188,10 +199,8 @@ function driftCommand(id: string, axis: 'x' | 'y'): Record<string, unknown> {
  * runs in normal mode on that sequencer instead, which is the only reason this
  * animates at all.
  *
- * Naming the same sequencer for every page is deliberate. A sequencer runs one
- * command at a time, so arriving at a new photograph cancels the pan on the one
- * being left, rather than leaving animations running on photos nobody is
- * looking at.
+ * Each page has its own sequencer, so this never stops the pan on the photo
+ * being left -- see panSequencer.
  */
 function pageChangedCommands(slides: PhotoSlide[]): unknown[] {
   return slides.flatMap((slide, index) => {
@@ -199,7 +208,7 @@ function pageChangedCommands(slides: PhotoSlide[]): unknown[] {
     if (!pan) return [];
     return [
       {
-        ...driftCommand(`photo${index}`, pan.axis),
+        ...driftCommand(index, pan.axis),
         when: `\${event.source.value == ${index}}`,
       },
     ];
@@ -304,7 +313,7 @@ function filledPage(
             align: pan.align,
             // Only the first page. The rest are started by the Pager when they
             // come into view -- see pageChangedCommands.
-            ...(index === 0 ? { onMount: [driftCommand(id, pan.axis)] } : {}),
+            ...(index === 0 ? { onMount: [driftCommand(index, pan.axis)] } : {}),
           }
         : {
             type: 'Image',

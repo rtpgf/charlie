@@ -720,9 +720,12 @@ cannot even ask the skill for help. A fast-mode command that names a sequencer
 runs in **normal mode** on that sequencer instead. Without `sequencer`, none of
 this animates.
 
-The same sequencer is named for every page on purpose: a sequencer runs one
-command at a time, so arriving at a new photograph cancels the pan on the one
-being left rather than leaving animations running on photos nobody is watching.
+**Each photograph gets its own sequencer**, and that matters for how a move
+looks. A sequencer holds one command, so a shared one means starting the
+incoming pan *stops* the outgoing pan — and a stopped `AnimateItem` "jumps ahead
+to the end state". The photo being left lurches to the end of its travel just as
+it starts to fade. With a sequencer each, it keeps drifting gently while it
+fades, which is the point of a crossfade.
 
 Only the first page pans on mount — the rest pan when they come into view.
 

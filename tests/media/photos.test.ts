@@ -552,7 +552,22 @@ describe('the photo document itself', () => {
     ];
 
     expect(animations.length).toBeGreaterThan(0);
-    for (const command of animations) expect(command['sequencer']).toBe('photoPan');
+    for (const command of animations) expect(command['sequencer']).toBeTruthy();
+  });
+
+  it('gives each photograph its own sequencer, so leaving one does not jerk it', () => {
+    // A sequencer holds one command: sharing one means starting the incoming
+    // pan STOPS the outgoing pan, and a stopped AnimateItem "jumps ahead to the
+    // end state" -- the photo being left lurches to the end of its travel just
+    // as it begins to fade.
+    const onPageChanged = findPager(photoDocument(stack(3)))['onPageChanged'] as Record<
+      string,
+      unknown
+    >[];
+
+    const sequencers = onPageChanged.map((command) => command['sequencer']);
+    expect(new Set(sequencers).size).toBe(sequencers.length);
+    expect(sequencers).toEqual(['photoPan0', 'photoPan1', 'photoPan2']);
   });
 
   it('pans a mixed share along each photograph\'s own axis', () => {
