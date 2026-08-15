@@ -726,6 +726,16 @@ being left rather than leaving animations running on photos nobody is watching.
 
 Only the first page pans on mount — the rest pan when they come into view.
 
+**Photographs crossfade rather than slide.** APL has no fade property, so
+`handlePageMove` replaces the default transition: the incoming photo's opacity
+tracks `event.amount` while it is drawn above the one being left. A slide
+announces the mechanism — you watch a card travel — where a fade leaves the eye
+where it already is, which is how the Echo Show shows its own artwork.
+
+Only the incoming page is touched, and it ends fully opaque, which is what APL
+requires of `event.nextChild`. Fading the *outgoing* page instead would leave it
+at zero opacity, invisible, for whenever someone came back to it.
+
 **Charlie keeps listening after showing a photo, and has to.** An APL document
 is displayed only while the session that rendered it is alive — end the session
 and the Echo Show returns to its home screen a few seconds after Charlie stops

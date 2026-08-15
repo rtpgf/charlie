@@ -820,3 +820,49 @@ describe('pictures of one person', () => {
     expect(spoken(response)).toBe('Jenna sent it.');
   });
 });
+
+describe('moving between photographs', () => {
+  /** Every string value in the document, however deeply nested. */
+  function allStrings(value: unknown): string[] {
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap(allStrings);
+    if (value && typeof value === 'object') return Object.values(value).flatMap(allStrings);
+    return [];
+  }
+
+  function pagerOf(count: number): Record<string, unknown> {
+    const document = photoDocument({
+      caption: 'c',
+      slides: Array.from({ length: count }, (_, index) => ({
+        imageUrl: `https://example.test/${index}`,
+        aspect: 0.75,
+      })),
+    });
+    return (document['mainTemplate'] as { items: Record<string, unknown>[] }).items[0]!;
+  }
+
+  it('crossfades rather than sliding', async () => {
+    const move = pagerOf(3)['handlePageMove'] as Record<string, unknown>[];
+
+    // A slide announces the mechanism; a fade leaves the eye on the face.
+    expect(move).toHaveLength(1);
+    const command = (move[0]!['commands'] as Record<string, unknown>[])[0]!;
+    expect(command['property']).toBe('opacity');
+    expect(allStrings(move).some((value) => value.includes('translateX'))).toBe(false);
+  });
+
+  it('leaves the incoming photograph fully opaque, as APL requires', async () => {
+    const move = pagerOf(3)['handlePageMove'] as Record<string, unknown>[];
+    const command = (move[0]!['commands'] as Record<string, unknown>[])[0]!;
+
+    // event.amount ends at 1, so the page it targets ends opaque. Fading the
+    // outgoing page instead would leave it invisible for a later visit.
+    expect(command['componentId']).toBe('${event.nextChild.uid}');
+    expect(command['value']).toBe('${event.amount}');
+    expect(move[0]!['drawOrder']).toBe('nextAbove');
+  });
+
+  it('does not dress up a set with nothing to move between', async () => {
+    expect(pagerOf(1)['handlePageMove']).toBeUndefined();
+  });
+});

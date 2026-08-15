@@ -118,6 +118,35 @@ export interface PhotoStack {
   motion?: boolean | undefined;
 }
 
+/**
+ * A crossfade between photographs, in place of the default slide.
+ *
+ * A slide announces the mechanism -- you watch a card move across the screen. A
+ * fade leaves the eye where it already is, on the face, which is how the Echo
+ * Show shows its own artwork and how a photo frame behaves.
+ *
+ * Only the incoming photograph is touched, and it ends at full opacity, which
+ * is exactly what APL requires of `event.nextChild` when the move completes.
+ * Fading the outgoing one instead would leave a page sitting at zero opacity,
+ * invisible, for whenever someone came back to it.
+ */
+const CROSSFADE = [
+  {
+    // The incoming photograph fades in over the one being left.
+    drawOrder: 'nextAbove',
+    commands: [
+      {
+        // SetValue is one of the few commands that runs during a page move,
+        // which happens at frame rate and so in fast mode.
+        type: 'SetValue',
+        componentId: '${event.nextChild.uid}',
+        property: 'opacity',
+        value: '${event.amount}',
+      },
+    ],
+  },
+];
+
 /** One pan at a time: starting a new one cancels the one being left. */
 const PAN_SEQUENCER = 'photoPan';
 
@@ -354,6 +383,7 @@ export function photoDocument(stack: PhotoStack): Record<string, unknown> {
           initialPage: 0,
           // The last photo returns to the first.
           navigation: stack.slides.length > 1 ? 'wrap' : 'none',
+          ...(stack.slides.length > 1 ? { handlePageMove: CROSSFADE } : {}),
           ...(fit === 'cover' && motion && stack.slides.length > 1
             ? { onPageChanged: pageChangedCommands(stack.slides) }
             : {}),
