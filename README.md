@@ -1152,6 +1152,33 @@ All settings live in `.env` (see `.env.example`).
 | `AI_EFFORT`             | `low`         | Thinking depth for extraction                                |
 | `AI_NARRATE_AGENDA`     | `false`       | Let the model rephrase multi-event Alexa answers             |
 
+## Database exposure
+
+Supabase serves every table in the `public` schema over its Data API, to a role
+that authenticates with a key designed to be published in client applications.
+Charlie has no client application and never hands that key out — but the key
+exists, and a family's messages, photographs and relationships would be one
+leaked string away from being readable and writable by anyone.
+
+So **row-level security is enabled on every table, with no policies at all**
+([011_enable_rls.sql](migrations/011_enable_rls.sql)). With no policy granting
+access, no row matches, and the Data API can read nothing and write nothing.
+There is no policy because there is no case in which that API should reach this
+data.
+
+Charlie is unaffected: it connects over Postgres as the table owner, and owners
+bypass RLS. `FORCE ROW LEVEL SECURITY` would change that and is deliberately
+not used — it would lock Charlie out of its own database.
+
+[tests/security.test.ts](tests/security.test.ts) asserts all three properties
+against a freshly migrated database, so **a new table without RLS fails the
+suite** rather than surfacing later as a warning email.
+
+Worth doing in the dashboard as well, as defence in depth: **Settings → API →
+Exposed schemas**, and remove `public`. Charlie never uses the Data API — it
+talks to Postgres directly and to Storage through its own endpoint, which is a
+separate service and unaffected.
+
 ## Alexa request verification
 
 Amazon requires a self-hosted skill endpoint to verify every inbound request.
